@@ -358,6 +358,13 @@ enum AVPixelFormat {
     AV_PIX_FMT_Y210BE,    ///< packed YUV 4:2:2 like YUYV422, 20bpp, data in the high bits, big-endian
     AV_PIX_FMT_Y210LE,    ///< packed YUV 4:2:2 like YUYV422, 20bpp, data in the high bits, little-endian
 
+    /**
+     * VPE hardware images.
+     *
+     * data[0] points to a VpiFrame
+     */
+    AV_PIX_FMT_VPE,
+
     AV_PIX_FMT_NB         ///< number of pixel formats, DO NOT USE THIS if you want to link with shared libav* because the number of formats might differ between versions
 };
 

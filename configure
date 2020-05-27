@@ -322,6 +322,7 @@ External library support:
   --enable-vulkan          enable Vulkan code [no]
   --disable-xlib           disable xlib [autodetect]
   --disable-zlib           disable zlib [autodetect]
+  --enable-vpe             enable vpe codec [no]
 
   The following libraries provide various hardware acceleration features:
   --disable-amf            disable AMF video encoding code [autodetect]
@@ -1822,6 +1823,7 @@ EXTERNAL_LIBRARY_LIST="
     opengl
     pocketsphinx
     vapoursynth
+    vpe
 "
 
 HWACCEL_AUTODETECT_LIBRARY_LIST="
@@ -6476,6 +6478,7 @@ enabled rkmpp             && { require_pkg_config rkmpp rockchip_mpp  rockchip/r
                                  die "ERROR: rkmpp requires --enable-libdrm"; }
                              }
 enabled vapoursynth       && require_pkg_config vapoursynth "vapoursynth-script >= 42" VSScript.h vsscript_init
+enabled vpe               && require_pkg_config libvpi libvpi "vpe/vpi_types.h vpe/vpi_api.h" vpi_create
 
 
 if enabled gcrypt; then
