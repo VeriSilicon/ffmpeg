@@ -3134,6 +3134,7 @@ vp9_qsv_encoder_deps="libmfx MFX_CODEC_VP9"
 vp9_qsv_encoder_select="qsvenc"
 vp9_v4l2m2m_decoder_deps="v4l2_m2m vp9_v4l2_m2m"
 vp9_vpe_decoder_deps="vpe"
+vp9_vpe_encoder_deps="vpe"
 wmv3_crystalhd_decoder_select="crystalhd"
 
 # parsers
