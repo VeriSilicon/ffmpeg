@@ -763,6 +763,7 @@ OBJS-$(CONFIG_ZMBV_DECODER)            += zmbv.o
 OBJS-$(CONFIG_ZMBV_ENCODER)            += zmbvenc.o
 OBJS-$(CONFIG_H264_VPE_DECODER)        += vpe_h264dec.o vpe_dec_common.o
 OBJS-$(CONFIG_HEVC_VPE_DECODER)        += vpe_hevcdec.o vpe_dec_common.o
+OBJS-$(CONFIG_VP9_VPE_DECODER)         += vpe_vp9dec.o vpe_dec_common.o
 
 # (AD)PCM decoders/encoders
 OBJS-$(CONFIG_PCM_ALAW_DECODER)           += pcm.o
