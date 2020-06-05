@@ -31,6 +31,7 @@
 #include "libavutil/frame.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixfmt.h"
+#include "hwconfig.h"
 
 #define OFFSET(x) (offsetof(VpeEncVp9Ctx, x))
 #define FLAGS \
@@ -571,6 +572,19 @@ static const AVClass vpe_enc_vp9_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
+static const AVCodecHWConfigInternal *vpe_vp9_hw_configs[] =
+    { &(const AVCodecHWConfigInternal){
+          .public =
+              {
+                  .pix_fmt = AV_PIX_FMT_VPE,
+                  .methods = AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX |
+                             AV_CODEC_HW_CONFIG_METHOD_HW_FRAMES_CTX,
+                  .device_type = AV_HWDEVICE_TYPE_VPE,
+              },
+          .hwaccel = NULL,
+      },
+      NULL };
+
 AVCodec ff_vp9_vpe_encoder = {
     .name           = "vp9enc_vpe",
     .long_name      = NULL_IF_CONFIG_SMALL("VP9 (VPE BIGSEA)"),
@@ -586,5 +600,6 @@ AVCodec ff_vp9_vpe_encoder = {
     .pix_fmts =
         (const enum AVPixelFormat[]){ AV_PIX_FMT_VPE, AV_PIX_FMT_YUV420P,
                                       AV_PIX_FMT_NONE },
+    .hw_configs     = vpe_vp9_hw_configs,
     .wrapper_name = "vpe",
 };
