@@ -51,6 +51,9 @@ typedef struct VpeH26xEncCtx {
     /*The hardware device context*/
     AVBufferRef *hwdevice;
 
+    /*Dictionary used to parse encoder parameters*/
+    AVDictionary *dict;
+
     /*The name of the device*/
     char *dev_name;
 
@@ -383,6 +386,48 @@ static int vpe_h26xe_output_avpacket(AVCodecContext *avctx, AVPacket *av_packet,
     return ret;
 }
 
+static int vpe_h26x_encode_create_param_list(AVCodecContext *avctx,
+                                         char *enc_params, H26xEncCfg *psetting)
+{
+    VpeH26xEncCtx *ctx            = (VpeH26xEncCtx *)avctx->priv_data;
+    AVDictionaryEntry *dict_entry = NULL;
+    VpiEncParamSet *tail        = NULL;
+    VpiEncParamSet *node        = NULL;
+
+    if (!av_dict_parse_string(&ctx->dict, enc_params, "=", ":", 0)) {
+        while ((dict_entry = av_dict_get(ctx->dict, "", dict_entry,
+                                         AV_DICT_IGNORE_SUFFIX))) {
+            node = malloc(sizeof(VpiEncParamSet));
+            if (!node)
+                return AVERROR(ENOMEM);
+            node->key   = dict_entry->key;
+            node->value = dict_entry->value;
+            node->next  = NULL;
+            if (tail != NULL) {
+                tail->next = node;
+                tail       = node;
+            } else {
+                psetting->param_list = tail = node;
+            }
+        }
+    }
+    return 0;
+}
+
+static void vpe_h26x_encode_release_param_list(AVCodecContext *avctx)
+{
+    VpeH26xEncCtx *ctx     = (VpeH26xEncCtx *)avctx->priv_data;
+    VpiEncParamSet *tail = ctx->h26x_enc_cfg.param_list;
+    VpiEncParamSet *node = NULL;
+
+    while (tail != NULL) {
+        node = tail->next;
+        free(tail);
+        tail = node;
+    }
+    av_dict_free(&ctx->dict);
+}
+
 static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
 {
     int ret = 0;
@@ -465,8 +510,14 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
         enc_ctx->h26x_enc_cfg.input_format = VPI_YUV420_PLANAR;
         break;
     }
-    enc_ctx->h26x_enc_cfg.enc_params = enc_ctx->enc_params;
     enc_ctx->h26x_enc_cfg.frame_ctx  = frame_hwctx;
+
+    ret = vpe_h26x_encode_create_param_list(avctx, enc_ctx->enc_params,
+                                           &enc_ctx->h26x_enc_cfg);
+    if (ret != 0) {
+        av_log(avctx, AV_LOG_ERROR, "vpe_h26x_encode_create_param_list failed\n");
+        return ret;
+    }
 
     /*Call the VPE h26x encoder initialization function*/
     ret = enc_ctx->api->init(enc_ctx->ctx, &enc_ctx->h26x_enc_cfg);
@@ -577,8 +628,10 @@ static int vpe_h26x_encode_receive_packet(AVCodecContext *avctx,
 
 static av_cold int vpe_h26x_encode_close(AVCodecContext *avctx)
 {
-    int ret                = 0;
-    VpeH26xEncCtx *enc_ctx = (VpeH26xEncCtx *)avctx->priv_data;
+    VpeH26xEncCtx *enc_ctx           = (VpeH26xEncCtx *)avctx->priv_data;
+    int ret                          = 0;
+
+    vpe_h26x_encode_release_param_list(avctx);
 
     enc_ctx->api->close(enc_ctx->ctx);
     av_buffer_unref(&enc_ctx->hwframe);

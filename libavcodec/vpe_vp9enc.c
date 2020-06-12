@@ -53,6 +53,9 @@ typedef struct {
     AVBufferRef *hw_device;
     /*The hardware frame context containing the input frames*/
     AVBufferRef *hw_frame;
+    /*Dictionary used to parse encoder parameters*/
+    AVDictionary *dict;
+
     /*VPI main context*/
     VpiCtx ctx;
     /*VPE codec function pointer*/
@@ -251,9 +254,8 @@ static int vpe_vp9enc_receive_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
     if (input_image) {
         if (!transpic->trans_pic) {
             transpic->trans_pic = av_frame_alloc();
-            if (!transpic->trans_pic) {
+            if (!transpic->trans_pic)
                 return AVERROR(ENOMEM);
-            }
         }
         av_frame_unref(transpic->trans_pic);
         av_frame_ref(transpic->trans_pic, input_image);
@@ -304,9 +306,8 @@ static int vpe_vp9enc_consume_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
     for (i = 0; i < MAX_WAIT_DEPTH; i++) {
         if (ctx->pic_wait_list[i].state == 1) {
             transpic = &ctx->pic_wait_list[i];
-            if (transpic && transpic->poc == consume_poc) {
+            if (transpic && transpic->poc == consume_poc)
                 goto find_pic;
-            }
         }
     }
     if (i == MAX_WAIT_DEPTH) {
@@ -326,6 +327,48 @@ find_pic:
     av_frame_unref(transpic->trans_pic);
     transpic->trans_pic = NULL;
     return 0;
+}
+
+static int vpe_enc_vp9_create_param_list(AVCodecContext *avctx, char *enc_params,
+                                      VpiEncVp9Opition *psetting)
+{
+    VpeEncVp9Ctx *ctx             = (VpeEncVp9Ctx *)avctx->priv_data;
+    AVDictionaryEntry *dict_entry = NULL;
+    VpiEncParamSet *tail        = NULL;
+    VpiEncParamSet *node        = NULL;
+
+    if (!av_dict_parse_string(&ctx->dict, enc_params, "=", ":", 0)) {
+        while ((dict_entry = av_dict_get(ctx->dict, "", dict_entry,
+                                         AV_DICT_IGNORE_SUFFIX))) {
+            node = malloc(sizeof(VpiEncParamSet));
+            if (!node)
+                return AVERROR(ENOMEM);
+            node->key   = dict_entry->key;
+            node->value = dict_entry->value;
+            node->next  = NULL;
+            if (tail != NULL) {
+                tail->next = node;
+                tail       = node;
+            } else {
+                psetting->param_list = tail = node;
+            }
+        }
+    }
+    return 0;
+}
+
+static void vpe_enc_vp9_release_param_list(AVCodecContext *avctx)
+{
+    VpeEncVp9Ctx *ctx             = (VpeEncVp9Ctx *)avctx->priv_data;
+    VpiEncParamSet *tail        = ctx->vp9cfg.param_list;
+    VpiEncParamSet *node        = NULL;
+
+    while (tail != NULL) {
+        node = tail->next;
+        free(tail);
+        tail = node;
+    }
+    av_dict_free(&ctx->dict);
 }
 
 static av_cold int vpe_enc_vp9_free_frames(AVCodecContext *avctx)
@@ -366,13 +409,13 @@ static av_cold int vpe_enc_vp9_get_frames(AVCodecContext *avctx)
 
 static av_cold int vpe_enc_vp9_close(AVCodecContext *avctx)
 {
-    VpeEncVp9Ctx *ctx = avctx->priv_data;
+    VpeEncVp9Ctx *ctx                = avctx->priv_data;
 
     if (!ctx->initialized)
         return 0;
 
+    vpe_enc_vp9_release_param_list(avctx);
     ctx->vpi->close(ctx->ctx);
-
     av_buffer_unref(&ctx->hw_frame);
     av_buffer_unref(&ctx->hw_device);
     ctx->initialized = 0;
@@ -396,7 +439,7 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
     }
 
     ret = vpe_vp9enc_init_hwctx(avctx);
-    if (ret) {
+    if (ret != 0) {
         av_log(avctx, AV_LOG_ERROR, "vpe_encvp9_init_hwctx failure\n");
         goto error;
     }
@@ -409,7 +452,6 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
     psetting->lag_in_frames = ctx->lag_in_frames;
     psetting->passes        = ctx->passes;
     psetting->framectx      = vpeframe_ctx->frame;
-    psetting->enc_params    = ctx->enc_params;
     psetting->width         = avctx->width;
     psetting->height        = avctx->height;
 
@@ -449,14 +491,20 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
     }
 
     ret = vpi_create(&ctx->ctx, &ctx->vpi, VP9ENC_VPE);
-    if (ret) {
+    if (ret != 0) {
         ret = AVERROR_EXTERNAL;
         av_log(avctx, AV_LOG_ERROR, "VP9 enc vpi_create failed\n");
         goto error;
     }
 
+    ret = vpe_enc_vp9_create_param_list(avctx, ctx->enc_params, psetting);
+    if (ret != 0) {
+        av_log(avctx, AV_LOG_ERROR, "vpe_enc_vp9_create_param_list failed\n");
+        return ret;
+    }
+
     ret = ctx->vpi->init(ctx->ctx, psetting);
-    if (ret) {
+    if (ret != 0) {
         av_log(avctx, AV_LOG_ERROR, "VP9 enc init failed\n");
         ret = AVERROR_EXTERNAL;
         goto error;
