@@ -67,7 +67,7 @@ typedef struct VpeH26xEncCtx {
     VpiApi *api;
 
     /*VPE h26x encoder configure*/
-    H26xEncCfg h26x_enc_cfg;
+    VpiH26xEncCfg h26x_enc_cfg;
 
     /*The queue for the input AVFrames*/
     VpeH26xEncFrm frame_queue_for_enc[MAX_WAIT_DEPTH];
@@ -387,7 +387,7 @@ static int vpe_h26xe_output_avpacket(AVCodecContext *avctx, AVPacket *av_packet,
 }
 
 static int vpe_h26x_encode_create_param_list(AVCodecContext *avctx,
-                                         char *enc_params, H26xEncCfg *psetting)
+                                         char *enc_params, VpiH26xEncCfg *psetting)
 {
     VpeH26xEncCtx *ctx            = (VpeH26xEncCtx *)avctx->priv_data;
     AVDictionaryEntry *dict_entry = NULL;
@@ -443,7 +443,7 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
         goto error;
     }
 
-    memset(&enc_ctx->h26x_enc_cfg, 0, sizeof(H26xEncCfg));
+    memset(&enc_ctx->h26x_enc_cfg, 0, sizeof(VpiH26xEncCfg));
     memset(enc_ctx->frame_queue_for_enc, 0,
            sizeof(enc_ctx->frame_queue_for_enc));
 

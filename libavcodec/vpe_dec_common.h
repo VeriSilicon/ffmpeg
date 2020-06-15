@@ -60,7 +60,7 @@ typedef struct VpeDecCtx {
     VpiApi *vpi;
 
     // VPE decodec setting parameters
-    DecOption *dec_setting;
+    VpiDecOption *dec_setting;
 
     // VPE decoder resieze config
     uint8_t *pp_setting;
