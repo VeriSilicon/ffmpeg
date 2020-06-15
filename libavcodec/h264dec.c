@@ -182,40 +182,27 @@ int ff_h264_alloc_tables(H264Context *h)
 {
     const int big_mb_num = h->mb_stride * (h->mb_height + 1);
     const int row_mb_num = 2*h->mb_stride*FFMAX(h->nb_slice_ctx, 1);
+    const int st_size = big_mb_num + h->mb_stride;
     int x, y;
 
-    FF_ALLOCZ_ARRAY_OR_GOTO(h->avctx, h->intra4x4_pred_mode,
-                      row_mb_num, 8 * sizeof(uint8_t), fail)
+    if (!FF_ALLOCZ_TYPED_ARRAY(h->intra4x4_pred_mode,     row_mb_num * 8)  ||
+        !FF_ALLOCZ_TYPED_ARRAY(h->non_zero_count,         big_mb_num)      ||
+        !FF_ALLOCZ_TYPED_ARRAY(h->slice_table_base,       st_size)         ||
+        !FF_ALLOCZ_TYPED_ARRAY(h->cbp_table,              big_mb_num)      ||
+        !FF_ALLOCZ_TYPED_ARRAY(h->chroma_pred_mode_table, big_mb_num)      ||
+        !FF_ALLOCZ_TYPED_ARRAY(h->mvd_table[0],           row_mb_num * 8)  ||
+        !FF_ALLOCZ_TYPED_ARRAY(h->mvd_table[1],           row_mb_num * 8)  ||
+        !FF_ALLOCZ_TYPED_ARRAY(h->direct_table,           big_mb_num * 4)  ||
+        !FF_ALLOCZ_TYPED_ARRAY(h->list_counts,            big_mb_num)      ||
+        !FF_ALLOCZ_TYPED_ARRAY(h->mb2b_xy,                big_mb_num)      ||
+        !FF_ALLOCZ_TYPED_ARRAY(h->mb2br_xy,               big_mb_num))
+        return AVERROR(ENOMEM);
     h->slice_ctx[0].intra4x4_pred_mode = h->intra4x4_pred_mode;
-
-    FF_ALLOCZ_OR_GOTO(h->avctx, h->non_zero_count,
-                      big_mb_num * 48 * sizeof(uint8_t), fail)
-    FF_ALLOCZ_OR_GOTO(h->avctx, h->slice_table_base,
-                      (big_mb_num + h->mb_stride) * sizeof(*h->slice_table_base), fail)
-    FF_ALLOCZ_OR_GOTO(h->avctx, h->cbp_table,
-                      big_mb_num * sizeof(uint16_t), fail)
-    FF_ALLOCZ_OR_GOTO(h->avctx, h->chroma_pred_mode_table,
-                      big_mb_num * sizeof(uint8_t), fail)
-    FF_ALLOCZ_ARRAY_OR_GOTO(h->avctx, h->mvd_table[0],
-                      row_mb_num, 16 * sizeof(uint8_t), fail);
-    FF_ALLOCZ_ARRAY_OR_GOTO(h->avctx, h->mvd_table[1],
-                      row_mb_num, 16 * sizeof(uint8_t), fail);
     h->slice_ctx[0].mvd_table[0] = h->mvd_table[0];
     h->slice_ctx[0].mvd_table[1] = h->mvd_table[1];
-
-    FF_ALLOCZ_OR_GOTO(h->avctx, h->direct_table,
-                      4 * big_mb_num * sizeof(uint8_t), fail);
-    FF_ALLOCZ_OR_GOTO(h->avctx, h->list_counts,
-                      big_mb_num * sizeof(uint8_t), fail)
-
     memset(h->slice_table_base, -1,
-           (big_mb_num + h->mb_stride) * sizeof(*h->slice_table_base));
+           st_size * sizeof(*h->slice_table_base));
     h->slice_table = h->slice_table_base + h->mb_stride * 2 + 1;
-
-    FF_ALLOCZ_OR_GOTO(h->avctx, h->mb2b_xy,
-                      big_mb_num * sizeof(uint32_t), fail);
-    FF_ALLOCZ_OR_GOTO(h->avctx, h->mb2br_xy,
-                      big_mb_num * sizeof(uint32_t), fail);
     for (y = 0; y < h->mb_height; y++)
         for (x = 0; x < h->mb_width; x++) {
             const int mb_xy = x + y * h->mb_stride;
@@ -226,9 +213,6 @@ int ff_h264_alloc_tables(H264Context *h)
         }
 
     return 0;
-
-fail:
-    return AVERROR(ENOMEM);
 }
 
 /**
@@ -253,8 +237,8 @@ int ff_h264_slice_context_init(H264Context *h, H264SliceContext *sl)
 
     if (sl != h->slice_ctx) {
         memset(er, 0, sizeof(*er));
-    } else
-    if (CONFIG_ERROR_RESILIENCE) {
+    } else if (CONFIG_ERROR_RESILIENCE) {
+        const int er_size = h->mb_height * h->mb_stride * (4*sizeof(int) + 1);
 
         /* init ER */
         er->avctx          = h->avctx;
@@ -269,8 +253,11 @@ int ff_h264_slice_context_init(H264Context *h, H264SliceContext *sl)
         er->b8_stride   = h->mb_width * 2 + 1;
 
         // error resilience code looks cleaner with this
-        FF_ALLOCZ_OR_GOTO(h->avctx, er->mb_index2xy,
-                          (h->mb_num + 1) * sizeof(int), fail);
+        if (!FF_ALLOCZ_TYPED_ARRAY(er->mb_index2xy,        h->mb_num + 1) ||
+            !FF_ALLOCZ_TYPED_ARRAY(er->error_status_table, mb_array_size) ||
+            !FF_ALLOCZ_TYPED_ARRAY(er->er_temp_buffer,     er_size)       ||
+            !FF_ALLOCZ_TYPED_ARRAY(sl->dc_val_base,        yc_size))
+            return AVERROR(ENOMEM); // ff_h264_free_tables will clean up for us
 
         for (y = 0; y < h->mb_height; y++)
             for (x = 0; x < h->mb_width; x++)
@@ -278,15 +265,6 @@ int ff_h264_slice_context_init(H264Context *h, H264SliceContext *sl)
 
         er->mb_index2xy[h->mb_height * h->mb_width] = (h->mb_height - 1) *
                                                       h->mb_stride + h->mb_width;
-
-        FF_ALLOCZ_OR_GOTO(h->avctx, er->error_status_table,
-                          mb_array_size * sizeof(uint8_t), fail);
-
-        FF_ALLOC_OR_GOTO(h->avctx, er->er_temp_buffer,
-                         h->mb_height * h->mb_stride * (4*sizeof(int) + 1), fail);
-
-        FF_ALLOCZ_OR_GOTO(h->avctx, sl->dc_val_base,
-                          yc_size * sizeof(int16_t), fail);
         er->dc_val[0] = sl->dc_val_base + h->mb_width * 2 + 2;
         er->dc_val[1] = sl->dc_val_base + y_size + h->mb_stride + 1;
         er->dc_val[2] = er->dc_val[1] + c_size;
@@ -295,9 +273,6 @@ int ff_h264_slice_context_init(H264Context *h, H264SliceContext *sl)
     }
 
     return 0;
-
-fail:
-    return AVERROR(ENOMEM); // ff_h264_free_tables will clean up for us
 }
 
 static int h264_init_context(AVCodecContext *avctx, H264Context *h)

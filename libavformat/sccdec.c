@@ -64,6 +64,7 @@ static int scc_read_header(AVFormatContext *s)
     SCCContext *scc = s->priv_data;
     AVStream *st = avformat_new_stream(s, NULL);
     char line[4096], line2[4096];
+    int64_t current_pos, next_pos;
     int64_t ts_start, ts_end;
     int count = 0, ret = 0;
     ptrdiff_t len2, len;
@@ -79,7 +80,6 @@ static int scc_read_header(AVFormatContext *s)
     st->codecpar->codec_id   = AV_CODEC_ID_EIA_608;
 
     while (!ff_text_eof(&tr)) {
-        int64_t current_pos, next_pos;
         char *saveptr = NULL, *lline;
         int hh1, mm1, ss1, fs1, i;
         int hh2, mm2, ss2, fs2;
@@ -120,18 +120,41 @@ try_again:
         for (i = 0; i < 4095; i += 3) {
             char *ptr = av_strtok(lline, " ", &saveptr);
             char c1, c2, c3, c4;
+            uint8_t o1, o2;
 
             if (!ptr)
                 break;
 
             if (av_sscanf(ptr, "%c%c%c%c", &c1, &c2, &c3, &c4) != 4)
                 break;
+            o1 = convert(c2) | (convert(c1) << 4);
+            o2 = convert(c4) | (convert(c3) << 4);
 
             lline = NULL;
             out[i+0] = 0xfc;
-            out[i+1] = convert(c2) | (convert(c1) << 4);
-            out[i+2] = convert(c4) | (convert(c3) << 4);
+            out[i+1] = o1;
+            out[i+2] = o2;
+
+            if (o1 == 0x94 && o2 == 0x2f && saveptr && av_strcasecmp(saveptr, "942f")) {
+                int64_t duration;
+
+                i += 3;
+                out[i] = 0;
+                duration = i * 11;
+
+                sub = ff_subtitles_queue_insert(&scc->q, out, i, 0);
+                if (!sub)
+                    return AVERROR(ENOMEM);
+
+                current_pos += i;
+                sub->pos = current_pos;
+                sub->pts = ts_start;
+                sub->duration = duration;
+                ts_start += duration;
+                i = 0;
+            }
         }
+
         out[i] = 0;
 
         sub = ff_subtitles_queue_insert(&scc->q, out, i, 0);

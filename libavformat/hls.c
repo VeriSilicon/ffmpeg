@@ -311,6 +311,8 @@ static struct playlist *new_playlist(HLSContext *c, const char *url,
         return NULL;
     reset_packet(&pls->pkt);
     ff_make_absolute_url(pls->url, sizeof(pls->url), base, url);
+    if (!pls->url[0])
+        return NULL;
     pls->seek_timestamp = AV_NOPTS_VALUE;
 
     pls->is_id3_timestamped = -1;
@@ -416,6 +418,10 @@ static struct segment *new_init_section(struct playlist *pls,
         ptr = info->uri;
     } else {
         ff_make_absolute_url(tmp_str, sizeof(tmp_str), url_base, info->uri);
+        if (!tmp_str[0]) {
+            av_free(sec);
+            return NULL;
+        }
     }
     sec->url = av_strdup(ptr);
     if (!sec->url) {
@@ -841,6 +847,11 @@ static int parse_playlist(HLSContext *c, const char *url,
 
             if (key_type != KEY_NONE) {
                 ff_make_absolute_url(tmp_str, sizeof(tmp_str), url, key);
+                if (!tmp_str[0]) {
+                    av_free(cur_init_section);
+                    ret = AVERROR_INVALIDDATA;
+                    goto fail;
+                }
                 cur_init_section->key = av_strdup(tmp_str);
                 if (!cur_init_section->key) {
                     av_free(cur_init_section);
@@ -883,8 +894,6 @@ static int parse_playlist(HLSContext *c, const char *url,
                     ret = AVERROR(ENOMEM);
                     goto fail;
                 }
-                seg->duration = duration;
-                seg->key_type = key_type;
                 if (has_iv) {
                     memcpy(seg->iv, iv, sizeof(iv));
                 } else {
@@ -895,6 +904,11 @@ static int parse_playlist(HLSContext *c, const char *url,
 
                 if (key_type != KEY_NONE) {
                     ff_make_absolute_url(tmp_str, sizeof(tmp_str), url, key);
+                    if (!tmp_str[0]) {
+                        ret = AVERROR_INVALIDDATA;
+                        av_free(seg);
+                        goto fail;
+                    }
                     seg->key = av_strdup(tmp_str);
                     if (!seg->key) {
                         av_free(seg);
@@ -906,6 +920,13 @@ static int parse_playlist(HLSContext *c, const char *url,
                 }
 
                 ff_make_absolute_url(tmp_str, sizeof(tmp_str), url, line);
+                if (!tmp_str[0]) {
+                    ret = AVERROR_INVALIDDATA;
+                    if (seg->key)
+                        av_free(seg->key);
+                    av_free(seg);
+                    goto fail;
+                }
                 seg->url = av_strdup(tmp_str);
                 if (!seg->url) {
                     av_free(seg->key);
@@ -914,6 +935,13 @@ static int parse_playlist(HLSContext *c, const char *url,
                     goto fail;
                 }
 
+                if (duration < 0.001 * AV_TIME_BASE) {
+                    av_log(c->ctx, AV_LOG_WARNING, "Cannot get correct #EXTINF value of segment %s,"
+                                    " set to default value to 1ms.\n", seg->url);
+                    duration = 0.001 * AV_TIME_BASE;
+                }
+                seg->duration = duration;
+                seg->key_type = key_type;
                 dynarray_add(&pls->segments, &pls->n_segments, seg);
                 is_segment = 0;
 
