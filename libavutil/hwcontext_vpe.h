@@ -1,6 +1,6 @@
 /*
  * Verisilicon VPI Video codec
- * Copyright (c) 2019 VeriSilicon, Inc.
+ * Copyright (C) 2020 VeriSilicon Holdings Co., Ltd.
  *
  * This file is part of FFmpeg.
  *

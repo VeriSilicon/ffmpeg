@@ -1,5 +1,6 @@
 /*
  * Verisilicon VPE Post Processing Filter
+ * Copyright (C) 2020 VeriSilicon Holdings Co., Ltd.
  *
  * This file is part of FFmpeg.
  *

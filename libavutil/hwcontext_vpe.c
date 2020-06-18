@@ -1,4 +1,7 @@
 /*
+ * Verisilicon hardware context
+ * Copyright (C) 2020 VeriSilicon Holdings Co., Ltd. <>
+ *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
