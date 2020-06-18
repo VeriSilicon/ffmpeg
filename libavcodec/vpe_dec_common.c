@@ -148,7 +148,9 @@ static void vpe_clear_unused_frames(VpeDecCtx *dec_ctx)
     VpeDecFrame *cur_frame = dec_ctx->frame_list;
 
     while (cur_frame) {
-        if (cur_frame->used && !cur_frame->vpi_frame->locked) {
+        if (cur_frame->used
+            && !cur_frame->vpi_frame->locked
+            && (av_buffer_get_ref_count(cur_frame->av_frame->buf[0]) == 1)) {
             vpe_decode_picture_consume(dec_ctx, cur_frame->vpi_frame);
             cur_frame->used = 0;
             av_frame_unref(cur_frame->av_frame);
