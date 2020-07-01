@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <vpe/vpi_api.h>
 #include <vpe/vpi_types.h>
+#include "internal.h"
 #include "libavutil/opt.h"
 #include "libavcodec/internal.h"
 #include "libavutil/hwcontext_vpe.h"
@@ -86,8 +87,6 @@ typedef struct VpeH26xEncCtx {
     char *level; /*Set the level of the encoding*/
     char *enc_params; /*The encoding parameters*/
 } VpeH26xEncCtx;
-
-static av_cold int vpe_h26x_encode_close(AVCodecContext *avctx);
 
 /**
  * Output the ES data in VpiPacket to AVPacket
@@ -441,7 +440,7 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     ret = vpi_create(&enc_ctx->ctx, &enc_ctx->api, H26XENC_VPE);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "h26x_enc vpe create failure %d\n", ret);
-        goto error;
+        return AVERROR_EXTERNAL;
     }
 
     memset(&enc_ctx->h26x_enc_cfg, 0, sizeof(VpiH26xEncCfg));
@@ -453,12 +452,10 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     if (avctx->hw_frames_ctx) {
         enc_ctx->hwframe = av_buffer_ref(avctx->hw_frames_ctx);
         if (!enc_ctx->hwframe) {
-            ret = AVERROR(ENOMEM);
-            goto error;
+            return AVERROR(ENOMEM);
         }
     } else {
-        ret = AVERROR_INVALIDDATA;
-        goto error;
+        return AVERROR_INVALIDDATA;
     }
 
     hwframe_ctx  = (AVHWFramesContext *)enc_ctx->hwframe->data;
@@ -524,14 +521,10 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     ret = enc_ctx->api->init(enc_ctx->ctx, &enc_ctx->h26x_enc_cfg);
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "vpe_h264x_encode_init failure\n");
-        goto error;
+        return AVERROR_EXTERNAL;
     }
 
     return 0;
-
-error:
-    vpe_h26x_encode_close(avctx);
-    return ret;
 }
 
 static int vpe_h26x_encode_send_frame(AVCodecContext *avctx,
@@ -634,11 +627,16 @@ static av_cold int vpe_h26x_encode_close(AVCodecContext *avctx)
 
     vpe_h26x_encode_release_param_list(avctx);
 
-    enc_ctx->api->close(enc_ctx->ctx);
+    if (enc_ctx->ctx) {
+        enc_ctx->api->close(enc_ctx->ctx);
+    }
+    vpe_h26xe_av_frame_free(avctx);
     av_buffer_unref(&enc_ctx->hwframe);
-    ret = vpi_destroy(enc_ctx->ctx);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "h26x encoder vpi_destroy failure\n");
+    if (enc_ctx->ctx) {
+        ret = vpi_destroy(enc_ctx->ctx);
+        if (ret < 0) {
+            av_log(avctx, AV_LOG_ERROR, "h26x encoder vpi_destroy failure\n");
+        }
     }
 
     return ret;
@@ -733,6 +731,7 @@ AVCodec ff_h264_vpe_encoder = {
     .receive_packet = &vpe_h26x_encode_receive_packet,
     .priv_class     = &vpe_encode_h264_class,
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .defaults       = vpe_h264_encode_defaults,
     .pix_fmts       =
         (const enum AVPixelFormat[]){ AV_PIX_FMT_VPE, AV_PIX_FMT_YUV420P,
@@ -753,6 +752,7 @@ AVCodec ff_hevc_vpe_encoder = {
     .receive_packet = &vpe_h26x_encode_receive_packet,
     .priv_class     = &vpe_encode_hevc_class,
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .defaults       = vpe_hevc_encode_defaults,
     .pix_fmts       =
         (const enum AVPixelFormat[]){ AV_PIX_FMT_VPE, AV_PIX_FMT_YUV420P,

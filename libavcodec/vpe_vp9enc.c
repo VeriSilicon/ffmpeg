@@ -24,6 +24,7 @@
 #include <vpe/vpi_types.h>
 
 #include "avcodec.h"
+#include "internal.h"
 #include "libavutil/log.h"
 #include "libavutil/hwcontext.h"
 #include "libavutil/hwcontext_vpe.h"
@@ -61,8 +62,6 @@ typedef struct {
     VpiCtx ctx;
     /*VPE codec function pointer*/
     VpiApi *vpi;
-    /*VPE init state*/
-    uint32_t initialized;
     /*Input avframe queue*/
     VpeEncVp9Pic pic_wait_list[MAX_WAIT_DEPTH];
     /*Input avframe index*/
@@ -408,21 +407,44 @@ static av_cold int vpe_enc_vp9_get_frames(AVCodecContext *avctx)
     return numbers_wait_frames;
 }
 
+static av_cold void vpe_enc_vp9_consume_flush(AVCodecContext *avctx)
+{
+    VpeEncVp9Ctx *ctx      = (VpeEncVp9Ctx *)avctx->priv_data;
+    VpeEncVp9Pic *transpic = NULL;
+    VpiFrame *vpi_frame;
+    int i, ret;
+
+    for (i = 0; i < MAX_WAIT_DEPTH; i++) {
+        if (ctx->pic_wait_list[i].state == 1) {
+            transpic = &ctx->pic_wait_list[i];
+            if (transpic->trans_pic) {
+                vpi_frame = (VpiFrame *)transpic->trans_pic->data[0];
+                vpi_frame->used_cnt--;
+                if (vpi_frame->used_cnt == 0)
+                    vpi_frame->locked = 0;
+                av_frame_free(&transpic->trans_pic);
+            }
+            transpic->state = 0;
+        }
+    }
+}
+
+
 static av_cold int vpe_enc_vp9_close(AVCodecContext *avctx)
 {
-    VpeEncVp9Ctx *ctx                = avctx->priv_data;
-
-    if (!ctx->initialized)
-        return 0;
+    VpeEncVp9Ctx *ctx = avctx->priv_data;
 
     vpe_enc_vp9_release_param_list(avctx);
-    ctx->vpi->close(ctx->ctx);
+    if (ctx->ctx) {
+        ctx->vpi->close(ctx->ctx);
+    }
+    vpe_enc_vp9_consume_flush(avctx);
     av_buffer_unref(&ctx->hw_frame);
     av_buffer_unref(&ctx->hw_device);
-    ctx->initialized = 0;
-
-    if (vpi_destroy(ctx->ctx)) {
-        return AVERROR_EXTERNAL;
+    if (ctx->ctx) {
+        if (vpi_destroy(ctx->ctx)) {
+            return AVERROR_EXTERNAL;
+        }
     }
     return 0;
 }
@@ -435,14 +457,10 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
     VpiEncVp9Opition *psetting = &ctx->vp9cfg;
     int ret                    = 0;
 
-    if (ctx->initialized == 1) {
-        return 0;
-    }
-
     ret = vpe_vp9enc_init_hwctx(avctx);
     if (ret != 0) {
         av_log(avctx, AV_LOG_ERROR, "vpe_encvp9_init_hwctx failure\n");
-        goto error;
+        return ret;
     }
     hwframe_ctx  = (AVHWFramesContext *)ctx->hw_frame->data;
     vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
@@ -493,9 +511,8 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
 
     ret = vpi_create(&ctx->ctx, &ctx->vpi, VP9ENC_VPE);
     if (ret != 0) {
-        ret = AVERROR_EXTERNAL;
         av_log(avctx, AV_LOG_ERROR, "VP9 enc vpi_create failed\n");
-        goto error;
+        return AVERROR_EXTERNAL;
     }
 
     ret = vpe_enc_vp9_create_param_list(avctx, ctx->enc_params, psetting);
@@ -507,19 +524,13 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
     ret = ctx->vpi->init(ctx->ctx, psetting);
     if (ret != 0) {
         av_log(avctx, AV_LOG_ERROR, "VP9 enc init failed\n");
-        ret = AVERROR_EXTERNAL;
-        goto error;
+        return AVERROR_EXTERNAL;
     }
 
-    ctx->initialized = 1;
     ctx->poc         = 0;
     ctx->flush_state = 0;
     memset(ctx->pic_wait_list, 0, sizeof(ctx->pic_wait_list));
-    return ret;
-
-error:
-    vpe_enc_vp9_close(avctx);
-    return ret;
+    return 0;
 }
 
 static int vpe_enc_vp9_send_frame(AVCodecContext *avctx,
@@ -646,6 +657,7 @@ AVCodec ff_vp9_vpe_encoder = {
     .close          = &vpe_enc_vp9_close,
     .priv_class     = &vpe_enc_vp9_class,
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .pix_fmts =
         (const enum AVPixelFormat[]){ AV_PIX_FMT_VPE, AV_PIX_FMT_YUV420P,
                                       AV_PIX_FMT_NONE },
