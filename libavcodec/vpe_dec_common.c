@@ -239,40 +239,6 @@ static VpeDecFrame *vpe_find_frame(VpeDecCtx *dec_ctx, VpiFrame *vpi_frame)
 }
 
 /**
- * Attempt to guess proper monotonic timestamps for decoded video frames
- * which might have incorrect times. Input timestamps may wrap around, in
- * which case the output will as well.
- * from libavcodec/decode.c
- */
-static int64_t vpe_guess_correct_pts(AVCodecContext *ctx,
-                                 int64_t reordered_pts, int64_t dts)
-{
-    int64_t pts = AV_NOPTS_VALUE;
-    if (dts != AV_NOPTS_VALUE) {
-        ctx->pts_correction_num_faulty_dts +=
-            dts <= ctx->pts_correction_last_dts;
-        ctx->pts_correction_last_dts = dts;
-    } else if (reordered_pts != AV_NOPTS_VALUE)
-        ctx->pts_correction_last_dts = reordered_pts;
-    if (reordered_pts != AV_NOPTS_VALUE) {
-        ctx->pts_correction_num_faulty_pts +=
-            reordered_pts <= ctx->pts_correction_last_pts;
-        ctx->pts_correction_last_pts = reordered_pts;
-    } else if(dts != AV_NOPTS_VALUE)
-        ctx->pts_correction_last_pts = dts;
-
-    if ((ctx->pts_correction_num_faulty_pts <= ctx->pts_correction_num_faulty_dts
-       || dts == AV_NOPTS_VALUE)
-       && reordered_pts != AV_NOPTS_VALUE)
-        pts = reordered_pts;
-    else
-        pts = dts;
-
-    return pts;
-}
-
-
-/**
  * Output the frame raw data
  */
 static int vpe_output_frame(AVCodecContext *avctx, VpiFrame *vpi_frame,
@@ -299,9 +265,7 @@ static int vpe_output_frame(AVCodecContext *avctx, VpiFrame *vpi_frame,
     out_frame->key_frame             = vpi_frame->key_frame;
     out_frame->pts                   = vpi_frame->pts;
     out_frame->pkt_dts               = vpi_frame->pkt_dts;
-    out_frame->best_effort_timestamp = vpe_guess_correct_pts(avctx,
-                                                             out_frame->pts,
-                                                             out_frame->pkt_dts);
+    out_frame->best_effort_timestamp = out_frame->pts;
 
     out_frame->hw_frames_ctx = av_buffer_ref(avctx->hw_frames_ctx);
     if (!out_frame->hw_frames_ctx) {
@@ -406,11 +370,12 @@ int ff_vpe_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
         /* fetch new packet or eof */
         ret = ff_decode_get_packet(avctx, &avpkt);
         if (ret == 0) {
-            dec_ctx->buffered_pkt->data    = avpkt.data;
-            dec_ctx->buffered_pkt->size    = avpkt.size;
-            dec_ctx->buffered_pkt->pts     = avpkt.pts;
-            dec_ctx->buffered_pkt->pkt_dts = avpkt.dts;
-            ref                            = av_buffer_ref(avpkt.buf);
+            dec_ctx->buffered_pkt->data     = avpkt.data;
+            dec_ctx->buffered_pkt->size     = avpkt.size;
+            dec_ctx->buffered_pkt->pts      = avpkt.pts;
+            dec_ctx->buffered_pkt->pkt_dts  = avpkt.dts;
+            dec_ctx->buffered_pkt->duration = avpkt.duration;
+            ref                             = av_buffer_ref(avpkt.buf);
             if (!ref) {
                 av_packet_unref(&avpkt);
                 return AVERROR(ENOMEM);
