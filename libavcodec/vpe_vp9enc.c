@@ -299,7 +299,6 @@ static int vpe_vp9enc_consume_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
                                   int consume_poc)
 {
     VpeEncVp9Pic *transpic = NULL;
-    VpiFrame *vpi_frame;
     int i;
 
     vpe_dump_pic("vpe_vp9enc_consume_pic", " --->", ctx, consume_poc);
@@ -319,10 +318,6 @@ static int vpe_vp9enc_consume_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
 find_pic:
     transpic->poc   = 0;
     transpic->state = 0;
-    vpi_frame       = (VpiFrame *)transpic->trans_pic->data[0];
-    vpi_frame->used_cnt--;
-    if (vpi_frame->used_cnt == 0)
-        vpi_frame->locked = 0;
 
     av_frame_unref(transpic->trans_pic);
     transpic->trans_pic = NULL;
@@ -411,17 +406,12 @@ static av_cold void vpe_enc_vp9_consume_flush(AVCodecContext *avctx)
 {
     VpeEncVp9Ctx *ctx      = (VpeEncVp9Ctx *)avctx->priv_data;
     VpeEncVp9Pic *transpic = NULL;
-    VpiFrame *vpi_frame;
     int i, ret;
 
     for (i = 0; i < MAX_WAIT_DEPTH; i++) {
         if (ctx->pic_wait_list[i].state == 1) {
             transpic = &ctx->pic_wait_list[i];
             if (transpic->trans_pic) {
-                vpi_frame = (VpiFrame *)transpic->trans_pic->data[0];
-                vpi_frame->used_cnt--;
-                if (vpi_frame->used_cnt == 0)
-                    vpi_frame->locked = 0;
                 av_frame_free(&transpic->trans_pic);
             }
             transpic->state = 0;

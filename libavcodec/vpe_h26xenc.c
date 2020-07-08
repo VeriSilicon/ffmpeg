@@ -241,18 +241,12 @@ static void vpe_h26xe_av_frame_free(AVCodecContext *avctx)
     VpeH26xEncCtx *enc_ctx      = (VpeH26xEncCtx *)avctx->priv_data;
     VpeH26xEncFrm *frame_queued = NULL;
     int i                       = 0;
-    VpiFrame *cur_frame;
 
     for (i = 0; i < MAX_WAIT_DEPTH; i++) {
         if (enc_ctx->frame_queue_for_enc[i].state == 1) {
             frame_queued = &enc_ctx->frame_queue_for_enc[i];
             if (frame_queued->frame) {
-                cur_frame = (VpiFrame *)frame_queued->frame->data[0];
                 av_frame_free(&frame_queued->frame);
-                cur_frame->used_cnt--;
-                if (cur_frame->used_cnt == 0) {
-                    cur_frame->locked = 0;
-                }
             }
             frame_queued->state = 0;
         }
@@ -268,7 +262,6 @@ static void vpe_h26xe_av_frame_unref(AVCodecContext *avctx,
     VpeH26xEncCtx *enc_ctx      = (VpeH26xEncCtx *)avctx->priv_data;
     VpeH26xEncFrm *frame_queued = NULL;
     int i;
-    VpiFrame *cur_frame;
 
     /*find the need_frame_index */
     for (i = 0; i < MAX_WAIT_DEPTH; i++) {
@@ -288,11 +281,6 @@ find_pic:
     frame_queued->frame_index       = -1;
     frame_queued->state             = 0;
     frame_queued->in_pass_one_queue = 0;
-    cur_frame                       = (VpiFrame *)frame_queued->frame->data[0];
-    cur_frame->used_cnt--;
-    if (cur_frame->used_cnt == 0) {
-        cur_frame->locked = 0;
-    }
     av_frame_unref(frame_queued->frame);
 }
 

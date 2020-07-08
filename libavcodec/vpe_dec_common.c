@@ -259,6 +259,7 @@ static int vpe_output_frame(AVCodecContext *avctx, VpiFrame *vpi_frame,
     if (ret < 0)
         return ret;
 
+    dec_frame->vpi_frame->locked     = 0;
     out_frame->linesize[0]           = vpi_frame->linesize[0];
     out_frame->linesize[1]           = vpi_frame->linesize[1];
     out_frame->linesize[2]           = vpi_frame->linesize[2];
