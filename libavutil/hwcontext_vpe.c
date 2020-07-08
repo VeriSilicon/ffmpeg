@@ -314,7 +314,7 @@ static void vpe_device_free(AVHWDeviceContext *device_ctx)
     av_freep(&priv);
 
     if (hwctx->device >= 0) {
-        close(hwctx->device);
+        vpi_close_hwdevice(hwctx->device);
     }
 }
 
@@ -324,7 +324,6 @@ static int vpe_device_create(AVHWDeviceContext *device_ctx, const char *device,
     AVVpeDeviceContext *hwctx = device_ctx->hwctx;
     AVDictionaryEntry *opt;
     VpeDevicePriv *priv;
-    const char *path;
     int ret;
 
     priv = av_mallocz(sizeof(*priv));
@@ -339,21 +338,17 @@ static int vpe_device_create(AVHWDeviceContext *device_ctx, const char *device,
     device_ctx->user_opaque = priv;
     device_ctx->free = vpe_device_free;
 
-    // Try to open the device as a transcode path.
-    // Default to using the first node if the user did not
-    // supply a path.
-    path = device ? device : "/dev/transcoder0";
-    hwctx->device = open(path, O_RDWR);
+    if (!device) {
+        av_log(device_ctx, AV_LOG_ERROR, "No valid device path\n");
+        return AVERROR_INVALIDDATA;
+    }
+    hwctx->device = vpi_open_hwdevice(device);
     if (hwctx->device == -1) {
         av_log(device_ctx, AV_LOG_ERROR, "failed to open hw device\n");
-        return AVERROR(errno);
+        return AVERROR_EXTERNAL;
     }
 
     priv->sys_info->device        = hwctx->device;
-    priv->sys_info->device_name   = av_strdup(path);
-    if (!priv->sys_info->device_name) {
-        return AVERROR(ENOMEM);
-    }
     priv->sys_info->priority      = VPE_TASK_VOD;
     priv->sys_info->sys_log_level = 0;
 
