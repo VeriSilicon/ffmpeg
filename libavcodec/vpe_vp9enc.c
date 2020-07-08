@@ -39,6 +39,7 @@
 #define FLAGS \
     (AV_OPT_FLAG_ENCODING_PARAM | AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_EXPORT)
 #define MAX_WAIT_DEPTH 44
+#define DEFAULT       -255
 
 typedef struct {
     int state;
@@ -96,24 +97,24 @@ const static AVOption vpe_enc_vp9_options[] = {
       "Encoder effort level, 0=fastest, 5=best quality",
       OFFSET(effort),
       AV_OPT_TYPE_INT,
-      { .i64 = 0 },
-      0,
+      { .i64 = DEFAULT },
+      DEFAULT,
       5,
       FLAGS },
     { "lag_in_frames",
       "Number of frames to lag. Up to 25. [0]",
       OFFSET(lag_in_frames),
       AV_OPT_TYPE_INT,
-      { .i64 = 0 },
-      0,
+      { .i64 = DEFAULT },
+      DEFAULT,
       25,
       FLAGS },
     { "passes",
       "Number of passes (1/2). [1]",
       OFFSET(passes),
       AV_OPT_TYPE_INT,
-      { .i64 = 1 },
-      1,
+      { .i64 = DEFAULT },
+      DEFAULT,
       2,
       FLAGS },
 
@@ -406,7 +407,7 @@ static av_cold void vpe_enc_vp9_consume_flush(AVCodecContext *avctx)
 {
     VpeEncVp9Ctx *ctx      = (VpeEncVp9Ctx *)avctx->priv_data;
     VpeEncVp9Pic *transpic = NULL;
-    int i, ret;
+    int i;
 
     for (i = 0; i < MAX_WAIT_DEPTH; i++) {
         if (ctx->pic_wait_list[i].state == 1) {
