@@ -38,12 +38,10 @@
 #define OFFSET(x) (offsetof(VpeEncVp9Ctx, x))
 #define FLAGS \
     (AV_OPT_FLAG_ENCODING_PARAM | AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_EXPORT)
-#define MAX_WAIT_DEPTH 44
 #define DEFAULT       -255
 
 typedef struct {
     int state;
-    int poc;
     AVFrame *trans_pic;
 } VpeEncVp9Pic;
 
@@ -179,7 +177,6 @@ error:
 static void vpe_vp9enc_output_packet(VpiPacket *vpi_packet,
                                      AVPacket *out_packet)
 {
-    memcpy(out_packet->data, vpi_packet->data, vpi_packet->size);
     out_packet->size = vpi_packet->size;
     out_packet->pts  = vpi_packet->pts;
     out_packet->dts  = vpi_packet->pkt_dts;
@@ -202,6 +199,7 @@ static int vpe_vp9enc_input_frame(AVFrame *input_image,
         out_frame->data[0]     = in_vpi_frame->data[0];
         out_frame->data[1]     = in_vpi_frame->data[1];
         out_frame->data[2]     = in_vpi_frame->data[2];
+        out_frame->opaque      = (void *)input_image;
     } else {
         memset(out_frame, 0, sizeof(VpiFrame));
     }
@@ -209,24 +207,19 @@ static int vpe_vp9enc_input_frame(AVFrame *input_image,
     return 0;
 }
 
-static void vpe_dump_pic(AVCodecContext *avctx, const char *str, const char *sep, VpeEncVp9Ctx *ctx,
-                         int cur)
+static void vpe_dump_pic(AVCodecContext *avctx, const char *str, const char *sep, VpeEncVp9Ctx *ctx)
 {
     int i = 0;
 
-    av_log(avctx, AV_LOG_DEBUG, "%s %d\n", str, cur);
     for (i = 0; i < MAX_WAIT_DEPTH; i++) {
         if ((ctx->pic_wait_list[i].state == 0) &&
-            (ctx->pic_wait_list[i].poc == 0) &&
             (ctx->pic_wait_list[i].trans_pic == NULL))
             continue;
 
-        av_log(avctx, AV_LOG_DEBUG, "pic[%d] state=%d, poc=%d, data=%p", i,
-               ctx->pic_wait_list[i].state, ctx->pic_wait_list[i].poc,
+        av_log(avctx, AV_LOG_DEBUG, "pic[%d] state=%d, data=%p", i,
+               ctx->pic_wait_list[i].state,
                ctx->pic_wait_list[i].trans_pic);
 
-        if (ctx->pic_wait_list[i].poc == cur)
-            av_log(ctx, AV_LOG_DEBUG, "%s", sep);
         av_log(ctx, AV_LOG_DEBUG, "\n");
     }
     av_log(avctx, AV_LOG_DEBUG, "\n");
@@ -236,10 +229,19 @@ static int vpe_vp9enc_receive_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
                                   const AVFrame *input_image)
 {
     VpeEncVp9Pic *transpic = NULL;
-    VpiFrame *vpi_frame;
+    VpiFrame *vpi_frame    = NULL;
+    VpiCtrlCmdParam cmd;
+    int ret;
     int i;
 
-    ctx->poc = ctx->poc + 1;
+    cmd.cmd  = VPI_CMD_VP9ENC_GET_EMPTY_FRAME_SLOT;
+    cmd.data = NULL;
+    ret = ctx->vpi->control(ctx->ctx,
+                    (void*)&cmd, (void *)&vpi_frame);
+    if (ret != 0 || vpi_frame == NULL) {
+        return AVERROR_EXTERNAL;
+    }
+
     for (i = 0; i < MAX_WAIT_DEPTH; i++) {
         if (ctx->pic_wait_list[i].state == 0) {
             transpic = &ctx->pic_wait_list[i];
@@ -248,9 +250,10 @@ static int vpe_vp9enc_receive_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
     }
 
     if (i == MAX_WAIT_DEPTH) {
-        return AVERROR(EAGAIN);
+        return AVERROR_BUFFER_TOO_SMALL;
     }
 
+    transpic->state = 1;
     if (input_image) {
         if (!transpic->trans_pic) {
             transpic->trans_pic = av_frame_alloc();
@@ -259,64 +262,39 @@ static int vpe_vp9enc_receive_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
         }
         av_frame_unref(transpic->trans_pic);
         av_frame_ref(transpic->trans_pic, input_image);
+        vpe_vp9enc_input_frame(transpic->trans_pic, vpi_frame);
     } else {
-        av_log(ctx, AV_LOG_DEBUG, "input image %d is empty\n", transpic->poc);
+        av_log(ctx, AV_LOG_DEBUG, "input image is empty, received EOF\n");
+        vpe_vp9enc_input_frame(NULL, vpi_frame);
     }
 
-    transpic->state = 1;
-    transpic->poc   = ctx->poc;
-    if (input_image) {
-        vpi_frame = (VpiFrame *)input_image->data[0];
-        vpi_frame->used_cnt++;
-    }
+    ctx->vpi->encode_put_frame(ctx->ctx, (void*)vpi_frame);
 
-    vpe_dump_pic(avctx, "vpe_vp9enc_receive_pic", " <---", ctx, ctx->poc);
+    vpe_dump_pic(avctx, "vpe_vp9enc_receive_pic", " <---", ctx);
     return 0;
 }
 
-static int vpe_vp9enc_get_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
-                              int need_poc, AVFrame **out_image)
-{
-    VpeEncVp9Pic *transpic = NULL;
-    int i;
-
-    vpe_dump_pic(avctx, "vpe_vp9enc_get_pic", " [****]", ctx, need_poc);
-    for (i = 0; i < MAX_WAIT_DEPTH; i++) {
-        if (ctx->pic_wait_list[i].state == 1) {
-            transpic = &ctx->pic_wait_list[i];
-            if (transpic && transpic->poc == need_poc) {
-                *out_image = transpic->trans_pic;
-                return 0;
-            }
-        }
-    }
-
-    *out_image = NULL;
-    return -1;
-}
-
 static int vpe_vp9enc_consume_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
-                                  int consume_poc)
+                                  AVFrame *consume_frame)
 {
     VpeEncVp9Pic *transpic = NULL;
     int i;
 
-    vpe_dump_pic(avctx, "vpe_vp9enc_consume_pic", " --->", ctx, consume_poc);
+    vpe_dump_pic(avctx, "vpe_vp9enc_consume_pic", " --->", ctx);
     for (i = 0; i < MAX_WAIT_DEPTH; i++) {
         if (ctx->pic_wait_list[i].state == 1) {
             transpic = &ctx->pic_wait_list[i];
-            if (transpic && transpic->poc == consume_poc)
+            if (transpic->trans_pic == consume_frame)
                 goto find_pic;
         }
     }
     if (i == MAX_WAIT_DEPTH) {
         av_log(avctx, AV_LOG_ERROR,
-               "vpe_vp9enc_consume_pic: poc %d is not matched\n", consume_poc);
-        return -1;
+               "avframe %p not matched\n", consume_frame);
+        return AVERROR(EINVAL);
     }
 
 find_pic:
-    transpic->poc   = 0;
     transpic->state = 0;
 
     av_frame_unref(transpic->trans_pic);
@@ -369,37 +347,22 @@ static void vpe_enc_vp9_release_param_list(AVCodecContext *avctx)
 static av_cold int vpe_enc_vp9_free_frames(AVCodecContext *avctx)
 {
     VpeEncVp9Ctx *ctx   = (VpeEncVp9Ctx *)avctx->priv_data;
-    int frame_tobe_free = 0;
     VpiCtrlCmdParam cmd;
+    AVFrame *frame_ref = NULL;
     int ret = 0;
 
-    /* Get picture number to be free */
-    cmd.cmd = VPI_CMD_VP9ENC_GET_PIC_TOBE_FREE;
-    ret     = ctx->vpi->control(ctx->ctx, (void *)&cmd, &frame_tobe_free);
+    cmd.cmd = VPI_CMD_VP9ENC_CONSUME_PIC;
+    ret     = ctx->vpi->control(ctx->ctx, (void *)&cmd, (void *)&frame_ref);
     if (ret < 0)
         return AVERROR_EXTERNAL;
 
-    if (frame_tobe_free > 0) {
-        ret = vpe_vp9enc_consume_pic(avctx, ctx, frame_tobe_free);
+    if (frame_ref) {
+        ret = vpe_vp9enc_consume_pic(avctx, ctx, frame_ref);
         if (ret != 0)
             return ret;
     }
 
     return 0;
-}
-
-static av_cold int vpe_enc_vp9_get_frames(AVCodecContext *avctx)
-{
-    VpeEncVp9Ctx *ctx       = (VpeEncVp9Ctx *)avctx->priv_data;
-    int numbers_wait_frames = 0;
-    int i                   = 0;
-
-    for (i = 0; i < MAX_WAIT_DEPTH; i++) {
-        if (ctx->pic_wait_list[i].trans_pic != NULL) {
-            numbers_wait_frames++;
-        }
-    }
-    return numbers_wait_frames;
 }
 
 static av_cold void vpe_enc_vp9_consume_flush(AVCodecContext *avctx)
@@ -495,8 +458,15 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
     if (avctx->profile == FF_PROFILE_VP9_0 ||
         avctx->profile == FF_PROFILE_VP9_1) {
         psetting->force_8bit = 1;
-    } else {
-        psetting->force_8bit = 0;
+    }
+
+    if (avctx->profile == FF_PROFILE_VP9_2 ||
+        avctx->profile == FF_PROFILE_VP9_3) {
+        if (psetting->force_8bit == 1) {
+            av_log(avctx, AV_LOG_ERROR,
+                   "error:In profiles 2 and 3, only > 8 bits is allowed.\n");
+            return AVERROR_INVALIDDATA;
+        }
     }
 
     ret = vpi_create(&ctx->ctx, &ctx->vpi, VP9ENC_VPE);
@@ -517,7 +487,6 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
         return AVERROR_EXTERNAL;
     }
 
-    ctx->poc         = 0;
     ctx->flush_state = 0;
     memset(ctx->pic_wait_list, 0, sizeof(ctx->pic_wait_list));
     return 0;
@@ -527,7 +496,7 @@ static int vpe_enc_vp9_send_frame(AVCodecContext *avctx,
                                   const AVFrame *input_frame)
 {
     VpeEncVp9Ctx *ctx = (VpeEncVp9Ctx *)avctx->priv_data;
-    int ret                 = 0;
+    int ret           = 0;
 
     /* Store input pictures */
     ret = vpe_vp9enc_receive_pic(avctx, ctx, input_frame);
@@ -540,54 +509,33 @@ static int vpe_enc_vp9_send_frame(AVCodecContext *avctx,
 
 static int vpe_enc_vp9_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
 {
-    AVFrame *pic      = NULL;
     VpeEncVp9Ctx *ctx = (VpeEncVp9Ctx *)avctx->priv_data;
-    VpiFrame vpi_frame;
     VpiPacket vpi_packet;
     VpiCtrlCmdParam cmd;
-    int next_frame = 0;
-    int ret = 0, ret1 = 0;
-    int buffer_size = 0;
-    int inputs = 0;
+    int stream_size = 0;
+    int ret = 0;
 
-    /* Get next picture number to be encoded */
-    cmd.cmd = VPI_CMD_VP9ENC_GET_NEXT_PIC;
-    ret     = ctx->vpi->control(ctx->ctx, &cmd, &next_frame);
-    if (ret != 0)
-        return AVERROR_EXTERNAL;
+    ret = vpe_enc_vp9_free_frames(avctx);
+    if (ret != 0) {
+        return ret;
+    }
 
-    /* Get next picture to be encoded */
-    ret = vpe_vp9enc_get_pic(avctx, ctx, next_frame + 1, &pic);
-    if (ret != 0)
+    cmd.cmd = VPI_CMD_VP9ENC_GET_FRAME_PACKET;
+    ret = ctx->vpi->control(ctx->ctx, &cmd, (void *)&stream_size);
+    if (ret == -1) {
         return AVERROR(EAGAIN);
-
-    inputs = vpe_enc_vp9_get_frames(avctx);
-    if (inputs == 0) {
-        av_log(avctx, AV_LOG_DEBUG, "Input Q was empty, send EOF\n");
+    } else if (ret == 1) {
         return AVERROR_EOF;
     }
 
-    /* Convert input picture from AVFrame to VpiFrame*/
-    ret = vpe_vp9enc_input_frame(pic, &vpi_frame);
-    if (ret != 0)
-        return AVERROR_EXTERNAL;
-
     /*Allocate AVPacket bufffer*/
-    buffer_size = (avctx->width * avctx->height * 3) / 4;
-    buffer_size += buffer_size / 2;
-    buffer_size &= (~4095);
-    ret = av_new_packet(avpkt, buffer_size);
+    ret = av_new_packet(avpkt, stream_size);
     if (ret != 0)
        return ret;
 
     vpi_packet.data = avpkt->data;
-    ret = ctx->vpi->encode(ctx->ctx, (void *)&vpi_frame, (void *)&vpi_packet);
+    ret = ctx->vpi->encode_get_packet(ctx->ctx, (void *)&vpi_packet);
     if (ret == 0) {
-        if (vpi_packet.size == 0) {
-            av_packet_unref(avpkt);
-            ret = AVERROR(EAGAIN);
-            goto exit;
-        }
         /*Convert output packet from VpiPacket to AVPacket*/
         vpe_vp9enc_output_packet(&vpi_packet, avpkt);
     } else {
@@ -595,12 +543,8 @@ static int vpe_enc_vp9_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
         ret = AVERROR_EXTERNAL;
     }
 
-exit:
-    ret1 = vpe_enc_vp9_free_frames(avctx);
-    if (ret != 0)
-        return ret;
-    else
-        return ret1;
+    return ret;
+
 }
 
 static const AVClass vpe_enc_vp9_class = {

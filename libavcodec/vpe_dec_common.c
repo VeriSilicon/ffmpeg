@@ -121,6 +121,10 @@ int ff_vpe_decode_init(AVCodecContext *avctx, VpiPlugin type)
     dec_ctx->dec_setting->pp_setting = dec_ctx->pp_setting;
     dec_ctx->dec_setting->transcode  = dec_ctx->transcode;
     dec_ctx->dec_setting->frame      = vpeframe_ctx->frame;
+    dec_ctx->dec_setting->src_width  = avctx->width;
+    dec_ctx->dec_setting->src_height = avctx->height;
+    dec_ctx->dec_setting->frmrate_n  = avctx->framerate.num;
+    dec_ctx->dec_setting->frmrate_d  = avctx->framerate.den;
     avctx->pix_fmt                   = AV_PIX_FMT_VPE;
 
     // Initialize the VPE decoder
@@ -308,7 +312,8 @@ static int vpe_release_stream_mem(VpeDecCtx *dec_ctx)
 {
     VpiCtrlCmdParam cmd_param;
     AVBufferRef *ref = NULL;
-    int ret;
+    VpeDecPacket *vpe_packet;
+    int ret, i;
 
     cmd_param.cmd = VPI_CMD_DEC_GET_USED_STRM_MEM;
      /* get the used packet buffer info from external decoder */
@@ -317,10 +322,25 @@ static int vpe_release_stream_mem(VpeDecCtx *dec_ctx)
         return AVERROR_EXTERNAL;
     }
     if (ref) {
+        for (i = 0; i < MAX_WAIT_DEPTH; i++) {
+            if (dec_ctx->packet_buf_wait_list[i].state == 1) {
+                vpe_packet = &dec_ctx->packet_buf_wait_list[i];
+                if (vpe_packet->buf_ref == ref)
+                    break;
+            }
+        }
+        if (i == MAX_WAIT_DEPTH) {
+            av_log(dec_ctx, AV_LOG_ERROR,
+                   "buf_ref %p not matched\n", ref);
+            return AVERROR(EINVAL);
+        }
+
+        vpe_packet->state = 0;
         /* unref the input avpkt buffer */
         av_buffer_unref(&ref);
-        return 1;
+        vpe_packet->buf_ref = NULL;
     }
+
     return 0;
 }
 
@@ -331,8 +351,9 @@ int ff_vpe_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     AVBufferRef *ref       = NULL;
     VpiFrame *in_vpi_frame = NULL;
     VpiCtrlCmdParam cmd_param;
+    VpeDecPacket *vpe_packet;
     int strm_buf_count;
-    int ret;
+    int ret, i;
 
     ret = vpe_release_stream_mem(dec_ctx);
     if (ret < 0) {
@@ -386,6 +407,18 @@ int ff_vpe_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
             dec_ctx->buffered_pkt->opaque  = (void *)ref;
             av_packet_unref(&avpkt);
 
+            for (i = 0; i < MAX_WAIT_DEPTH; i++) {
+                if (dec_ctx->packet_buf_wait_list[i].state == 0) {
+                    vpe_packet = &dec_ctx->packet_buf_wait_list[i];
+                    break;
+                }
+            }
+            if (i == MAX_WAIT_DEPTH) {
+                return AVERROR_BUFFER_TOO_SMALL;
+            }
+            vpe_packet->state   = 1;
+            vpe_packet->buf_ref = ref;
+
             /* get frame buffer from pool */
             ret = vpe_get_frame(avctx, dec_ctx, &in_vpi_frame);
             if (ret < 0) {
@@ -431,21 +464,33 @@ int ff_vpe_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     return AVERROR(EAGAIN);
 }
 
+static av_cold void vpe_dec_consume_flush(VpeDecCtx *dec_ctx)
+{
+    VpeDecPacket *vpe_packet = NULL;
+    int i;
+
+    for (i = 0; i < MAX_WAIT_DEPTH; i++) {
+        if (dec_ctx->packet_buf_wait_list[i].state == 1) {
+            vpe_packet = &dec_ctx->packet_buf_wait_list[i];
+            if (vpe_packet->buf_ref) {
+                av_buffer_unref(&vpe_packet->buf_ref);
+            }
+            vpe_packet->state = 0;
+        }
+    }
+}
 
 av_cold int ff_vpe_decode_close(AVCodecContext *avctx)
 {
     VpeDecCtx *dec_ctx = avctx->priv_data;
     VpeDecFrame *cur_frame;
-    int ret;
 
     vpe_clear_unused_frames(dec_ctx);
     if (dec_ctx->ctx == NULL) {
         return 0;
     }
     dec_ctx->vpi->close(dec_ctx->ctx);
-    do {
-        ret = vpe_release_stream_mem(dec_ctx);
-    } while (ret == 1);
+    vpe_dec_consume_flush(dec_ctx);
 
     cur_frame = dec_ctx->frame_list;
     while (cur_frame) {

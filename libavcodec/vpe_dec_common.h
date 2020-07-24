@@ -38,6 +38,11 @@
 
 extern const AVOption vpe_decode_options[];
 
+typedef struct {
+    int state;
+    AVBufferRef *buf_ref;
+} VpeDecPacket;
+
 typedef struct VpeDecFrame {
     AVFrame *av_frame;
     // frame structure used for external codec
@@ -73,6 +78,9 @@ typedef struct VpeDecCtx {
 
     // VPE frame linked list
     VpeDecFrame *frame_list;
+
+    // Input AvPacket buffer_ref
+    VpeDecPacket packet_buf_wait_list[MAX_WAIT_DEPTH];
 } VpeDecCtx;
 
 int ff_vpe_decode_init(AVCodecContext *avctx, VpiPlugin type);

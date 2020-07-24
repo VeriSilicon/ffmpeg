@@ -29,8 +29,6 @@
 #include "libavutil/hwcontext_vpe.h"
 #include "hwconfig.h"
 
-#define MAX_WAIT_DEPTH 78
-
 typedef struct VpeH26xEncFrm {
     /*The state of used or not*/
     int state;
