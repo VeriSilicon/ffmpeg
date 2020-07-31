@@ -216,13 +216,13 @@ static void vpe_dump_pic(AVCodecContext *avctx, const char *str, const char *sep
             (ctx->pic_wait_list[i].trans_pic == NULL))
             continue;
 
-        av_log(avctx, AV_LOG_DEBUG, "pic[%d] state=%d, data=%p", i,
+        av_log(avctx, AV_LOG_TRACE, "pic[%d] state=%d, data=%p", i,
                ctx->pic_wait_list[i].state,
                ctx->pic_wait_list[i].trans_pic);
 
-        av_log(ctx, AV_LOG_DEBUG, "\n");
+        av_log(ctx, AV_LOG_TRACE, "\n");
     }
-    av_log(avctx, AV_LOG_DEBUG, "\n");
+    av_log(avctx, AV_LOG_TRACE, "\n");
 }
 
 static int vpe_vp9enc_receive_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
@@ -351,16 +351,20 @@ static av_cold int vpe_enc_vp9_free_frames(AVCodecContext *avctx)
     AVFrame *frame_ref = NULL;
     int ret = 0;
 
-    cmd.cmd = VPI_CMD_VP9ENC_CONSUME_PIC;
-    ret     = ctx->vpi->control(ctx->ctx, (void *)&cmd, (void *)&frame_ref);
-    if (ret < 0)
-        return AVERROR_EXTERNAL;
+    do {
+        cmd.cmd = VPI_CMD_VP9ENC_CONSUME_PIC;
+        ret     = ctx->vpi->control(ctx->ctx, (void *)&cmd, (void *)&frame_ref);
+        if (ret < 0)
+            return AVERROR_EXTERNAL;
 
-    if (frame_ref) {
-        ret = vpe_vp9enc_consume_pic(avctx, ctx, frame_ref);
-        if (ret != 0)
-            return ret;
-    }
+        if (frame_ref) {
+            ret = vpe_vp9enc_consume_pic(avctx, ctx, frame_ref);
+            if (ret != 0)
+                return ret;
+        } else {
+            break;
+        }
+    } while(1);
 
     return 0;
 }
