@@ -55,7 +55,8 @@ static const enum AVPixelFormat input_pix_fmts[] = {
     AV_PIX_FMT_YUV420P10BE, AV_PIX_FMT_YUV422P10LE, AV_PIX_FMT_YUV422P10BE,
     AV_PIX_FMT_P010BE,      AV_PIX_FMT_YUV444P,     AV_PIX_FMT_RGB24,
     AV_PIX_FMT_BGR24,       AV_PIX_FMT_ARGB,        AV_PIX_FMT_RGBA,
-    AV_PIX_FMT_ABGR,        AV_PIX_FMT_BGRA,        AV_PIX_FMT_NONE,
+    AV_PIX_FMT_ABGR,        AV_PIX_FMT_BGRA,        AV_PIX_FMT_VPE,
+    AV_PIX_FMT_NONE,
 };
 
 typedef struct PixelMapTable {
@@ -81,6 +82,7 @@ static PixelMapTable ptable[] = {
     { AV_PIX_FMT_RGBA, VPI_FMT_RGBA },
     { AV_PIX_FMT_ABGR, VPI_FMT_ABGR },
     { AV_PIX_FMT_BGRA, VPI_FMT_BGRA },
+    { AV_PIX_FMT_VPE, VPI_FMT_VPE },
 };
 
 static const enum AVPixelFormat output_pix_fmts[] = {
@@ -117,6 +119,7 @@ static av_cold void vpe_pp_uninit(AVFilterContext *avf_ctx)
 
     if (ctx->hw_device) {
         ctx->vpi->close(ctx->ctx);
+        av_buffer_unref(&ctx->hw_frame);
         av_buffer_unref(&ctx->hw_device);
         vpi_destroy(ctx->ctx);
         avf_ctx->priv = NULL;
@@ -131,7 +134,7 @@ static void vpe_pp_picture_consumed(void *opaque, uint8_t *data)
     cmd.cmd  = VPI_CMD_PP_CONSUME;
     cmd.data = data;
     ctx->vpi->control(ctx->ctx, (void *)&cmd, NULL);
-    free(data);
+    av_freep(&data);
 }
 
 static int vpe_pp_output_avframe(VpePPFilter *ctx, VpiFrame *input,
@@ -169,8 +172,7 @@ static int vpe_pp_output_avframe(VpePPFilter *ctx, VpiFrame *input,
     return 0;
 }
 
-static int vpe_pp_output_vpeframe(AVFrame *input, VpiFrame *output,
-                                  int max_frame_delay)
+static int vpe_pp_output_vpeframe(AVFrame *input, VpiFrame *output)
 {
     memset(output, 0, sizeof(VpiFrame));
     if (input) {
@@ -185,7 +187,6 @@ static int vpe_pp_output_vpeframe(AVFrame *input, VpiFrame *output,
         output->data[0]          = input->data[0];
         output->data[1]          = input->data[1];
         output->data[2]          = input->data[2];
-        output->max_frames_delay = max_frame_delay;
     }
 
     return 0;
@@ -195,23 +196,34 @@ static int vpe_pp_filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *avf_ctx = inlink->dst;
     AVFilterLink *outlink    = avf_ctx->outputs[0];
-    AVHWFramesContext *hwframe_ctx = NULL;
     AVFrame *buf_out = NULL;
     VpePPFilter *ctx = avf_ctx->priv;
-    VpiFrame in_picture, *out_picture;
-    AVVpeFramesContext *vpeframe_ctx = NULL;
+    AVHWFramesContext *hwframe_ctx;
+    AVVpeFramesContext *vpeframe_ctx;
+    VpiFrame *in_picture, *out_picture;
+
     int ret             = 0;
-    int max_frame_delay = 0;
 
     hwframe_ctx = (AVHWFramesContext *)ctx->hw_frame->data;
-    vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
-    max_frame_delay = vpeframe_ctx->frame->max_frames_delay;
-    ret = vpe_pp_output_vpeframe(frame, &in_picture, max_frame_delay);
-    if (ret)
-        return ret;
+    vpeframe_ctx = hwframe_ctx->hwctx;
 
-    out_picture = (VpiFrame *)malloc(sizeof(VpiFrame));
-    ret = ctx->vpi->process(ctx->ctx, &in_picture, out_picture);
+    if (inlink->format != AV_PIX_FMT_VPE) {
+        in_picture = (VpiFrame *)av_mallocz(vpeframe_ctx->frame_size);
+        if (!in_picture) {
+            return AVERROR(ENOMEM);
+        }
+        ret = vpe_pp_output_vpeframe(frame, in_picture);
+        if (ret)
+            return ret;
+    } else {
+        in_picture = (VpiFrame *)frame->data[0];
+    }
+
+    out_picture = (VpiFrame *)av_mallocz(vpeframe_ctx->frame_size);
+    if (!out_picture) {
+        return AVERROR(ENOMEM);
+    }
+    ret = ctx->vpi->process(ctx->ctx, in_picture, out_picture);
     if (ret)
         return AVERROR_EXTERNAL;
 
@@ -227,6 +239,9 @@ static int vpe_pp_filter_frame(AVFilterLink *inlink, AVFrame *frame)
     if (ret < 0)
         return AVERROR_EXTERNAL;
 
+    if (inlink->format != AV_PIX_FMT_VPE) {
+        av_freep(&in_picture);
+    }
     av_frame_free(&frame);
 
     ret = ff_outlink_get_status(outlink);
@@ -246,30 +261,36 @@ static int vpe_pp_init_hwctx(AVFilterContext *ctx, AVFilterLink *inlink)
     int ret             = 0;
     VpePPFilter *filter = ctx->priv;
 
-    if (ctx->hw_device_ctx) {
-        filter->hw_device = av_buffer_ref(ctx->hw_device_ctx);
-        if (!filter->hw_device)
-            return AVERROR(ENOMEM);
-    } else {
-        return AVERROR(ENOMEM);
-    }
+    if (!inlink->hw_frames_ctx) {
+        if (ctx->hw_device_ctx) {
+            inlink->hw_frames_ctx = av_hwframe_ctx_alloc(ctx->hw_device_ctx);
+            if (!inlink->hw_frames_ctx) {
+                av_log(ctx, AV_LOG_ERROR, "av_hwframe_ctx_alloc failed\n");
+                return AVERROR(ENOMEM);
+            }
+        } else {
+            av_log(ctx, AV_LOG_ERROR, "No hw frame/device available\n");
+            return AVERROR(EINVAL);
+        }
+        hwframe_ctx = (AVHWFramesContext *)inlink->hw_frames_ctx->data;
 
-    filter->hw_frame = av_hwframe_ctx_alloc(filter->hw_device);
-    if (!filter->hw_frame)
-        return AVERROR(ENOMEM);
-
-    hwframe_ctx = (AVHWFramesContext *)filter->hw_frame->data;
-    if (!hwframe_ctx->pool) {
         hwframe_ctx->format    = AV_PIX_FMT_VPE;
         hwframe_ctx->sw_format = inlink->format;
         hwframe_ctx->width     = inlink->w;
         hwframe_ctx->height    = inlink->h;
 
-        if ((ret = av_hwframe_ctx_init(filter->hw_frame)) < 0) {
+        if ((ret = av_hwframe_ctx_init(inlink->hw_frames_ctx)) < 0) {
             return ret;
         }
     }
-    inlink->hw_frames_ctx = filter->hw_frame;
+
+    filter->hw_device = av_buffer_ref(ctx->hw_device_ctx);
+    if (!filter->hw_device)
+        return AVERROR(ENOMEM);
+    filter->hw_frame  = av_buffer_ref(inlink->hw_frames_ctx);
+    if (!filter->hw_frame)
+        return AVERROR(ENOMEM);
+
     return 0;
 }
 
@@ -309,6 +330,12 @@ static int vpe_pp_config_props(AVFilterLink *inlink)
     cfg->force_10bit = ctx->force_10bit;
     cfg->low_res     = ctx->low_res;
     cfg->frame       = vpeframe_ctx->frame;
+    if (inlink->format == AV_PIX_FMT_VPE) {
+        // the previous filter is hwupload_vpe
+        cfg->b_disable_tcache = 1;
+    } else {
+        cfg->b_disable_tcache = 0;
+    }
 
     cmd.cmd  = VPI_CMD_PP_CONFIG;
     cmd.data = cfg;
@@ -316,23 +343,29 @@ static int vpe_pp_config_props(AVFilterLink *inlink)
     if (ret < 0){
         return AVERROR_EXTERNAL;
     }
+
     return 0;
 }
 
 static int vpe_pp_query_formats(AVFilterContext *avf_ctx)
 {
     int ret;
-    AVFilterFormats *in_fmts = ff_make_format_list(input_pix_fmts);
+    AVFilterFormats *in_fmts;
     AVFilterFormats *out_fmts;
 
+    in_fmts = ff_make_format_list(input_pix_fmts);
     ret = ff_formats_ref(in_fmts, &avf_ctx->inputs[0]->out_formats);
     if (ret < 0){
-        av_log(NULL, AV_LOG_ERROR, "ff_formats_ref error=%d\n", ret);
+        av_log(NULL, AV_LOG_ERROR, "input ff_formats_ref error=%d\n", ret);
         return ret;
     }
 
     out_fmts = ff_make_format_list(output_pix_fmts);
     ret      = ff_formats_ref(out_fmts, &avf_ctx->outputs[0]->in_formats);
+    if (ret < 0){
+        av_log(NULL, AV_LOG_ERROR, "output ff_formats_ref error=%d\n", ret);
+        return ret;
+    }
 
     return ret;
 }

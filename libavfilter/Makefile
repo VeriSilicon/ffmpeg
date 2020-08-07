@@ -468,6 +468,7 @@ OBJS-$(CONFIG_ZOOMPAN_FILTER)                += vf_zoompan.o
 OBJS-$(CONFIG_ZSCALE_FILTER)                 += vf_zscale.o
 OBJS-$(CONFIG_SPLITER_VPE_FILTER)            += vf_spliter_vpe.o
 OBJS-$(CONFIG_PP_VPE_FILTER)                 += vf_pp_vpe.o
+OBJS-$(CONFIG_SPLITER_VPE_FILTER)            += vf_hwupload_vpe.o
 
 OBJS-$(CONFIG_ALLRGB_FILTER)                 += vsrc_testsrc.o
 OBJS-$(CONFIG_ALLYUV_FILTER)                 += vsrc_testsrc.o

@@ -3644,6 +3644,7 @@ yadif_cuda_filter_deps="ffnvcodec"
 yadif_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
 spliter_vpe_filter_deps="vpe"
 pp_vpe_filter_deps="vpe"
+hwupload_vpe_filter_deps="vpe"
 
 # examples
 avio_list_dir_deps="avformat avutil"
