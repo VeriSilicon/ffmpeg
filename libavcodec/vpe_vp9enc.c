@@ -149,24 +149,7 @@ static int vpe_vp9enc_init_hwctx(AVCodecContext *avctx)
             goto error;
         }
     } else {
-        if (avctx->hw_device_ctx) {
-            ctx->hw_device = av_buffer_ref(avctx->hw_device_ctx);
-            if (!ctx->hw_device) {
-                ret = AVERROR(ENOMEM);
-                goto error;
-            }
-        } else {
-            ret = av_hwdevice_ctx_create(&ctx->hw_device, AV_HWDEVICE_TYPE_VPE,
-                                         NULL, NULL, 0);
-            if (ret < 0)
-                goto error;
-        }
-
-        ctx->hw_frame = av_hwframe_ctx_alloc(ctx->hw_device);
-        if (!ctx->hw_frame) {
-            ret = AVERROR(ENOMEM);
-            goto error;
-        }
+        ret = AVERROR_INVALIDDATA;
     }
 
     return ret;

@@ -33,12 +33,6 @@ typedef struct VpeH26xEncFrm {
     /*The state of used or not*/
     int state;
 
-    /*In pass one queue or not*/
-    int in_pass_one_queue;
-
-    /*The index of the frame*/
-    int frame_index;
-
     /*The pointer for input AVFrame*/
     AVFrame *frame;
 } VpeH26xEncFrm;
@@ -47,9 +41,6 @@ typedef struct VpeH26xEncCtx {
     AVClass *class;
     /*The hardware frame context containing the input frames*/
     AVBufferRef *hwframe;
-
-    /*The hardware device context*/
-    AVBufferRef *hwdevice;
 
     /*Dictionary used to parse encoder parameters*/
     AVDictionary *dict;
@@ -70,13 +61,7 @@ typedef struct VpeH26xEncCtx {
     VpiH26xEncCfg h26x_enc_cfg;
 
     /*The queue for the input AVFrames*/
-    VpeH26xEncFrm frame_queue_for_enc[MAX_WAIT_DEPTH];
-
-    /*No input frame*/
-    int no_input_frm;
-
-    /*The index of the frame*/
-    int frame_index;
+    VpeH26xEncFrm pic_wait_list[MAX_WAIT_DEPTH];
 
     /*Params passed from ffmpeg */
     int crf; /*VCE Constant rate factor mode*/
@@ -86,198 +71,6 @@ typedef struct VpeH26xEncCtx {
     char *level; /*Set the level of the encoding*/
     char *enc_params; /*The encoding parameters*/
 } VpeH26xEncCtx;
-
-/**
- * Output the ES data in VpiPacket to AVPacket
- */
-static int vpe_h26xe_output_es_to_avpacket(AVPacket *av_packet,
-                                           VpiPacket *vpi_packet)
-{
-    int ret                  = 0;
-    VpiH26xFrmHead *frm_head = (VpiH26xFrmHead *)vpi_packet->opaque;
-
-    if (av_new_packet(av_packet, vpi_packet->size))
-        return AVERROR(ENOMEM);
-
-    memcpy(av_packet->data, (uint8_t *)vpi_packet->data, vpi_packet->size);
-    if (frm_head != NULL) {
-        if (frm_head->resend_header) {
-            memcpy(av_packet->data, (uint8_t *)frm_head->header_data,
-                   frm_head->header_size);
-        }
-    }
-    av_packet->pts = vpi_packet->pts;
-    av_packet->dts = vpi_packet->pkt_dts;
-
-    return ret;
-}
-
-/**
- * Output the ES data in VpiPacket to AVPacket and control the encoder to
- * update the statistic
- */
-static int vpe_h26xe_output_es_update_statis(AVCodecContext *avctx,
-                                             AVPacket *av_packet,
-                                             VpiPacket *vpi_packet)
-{
-    int ret                = 0;
-    VpeH26xEncCtx *enc_ctx = NULL;
-    int stream_size        = vpi_packet->size;
-    VpiCtrlCmdParam cmd;
-
-    if ((ret = vpe_h26xe_output_es_to_avpacket(av_packet, vpi_packet)) < 0) {
-        return ret;
-    }
-
-    return ret;
-}
-
-/**
- * av_frame_free the AVFrame in the AVFrame input queue
- */
-static void vpe_h26xe_av_frame_free(AVCodecContext *avctx)
-{
-    VpeH26xEncCtx *enc_ctx      = (VpeH26xEncCtx *)avctx->priv_data;
-    VpeH26xEncFrm *frame_queued = NULL;
-    int i                       = 0;
-
-    for (i = 0; i < MAX_WAIT_DEPTH; i++) {
-        if (enc_ctx->frame_queue_for_enc[i].state == 1) {
-            frame_queued = &enc_ctx->frame_queue_for_enc[i];
-            if (frame_queued->frame) {
-                av_frame_free(&frame_queued->frame);
-            }
-            frame_queued->state = 0;
-        }
-    }
-}
-
-/**
- * av_frame_unref the consumed AVFrame in the AVFrame input queue
- */
-static void vpe_h26xe_av_frame_unref(AVCodecContext *avctx,
-                                     int consumed_frame_index)
-{
-    VpeH26xEncCtx *enc_ctx      = (VpeH26xEncCtx *)avctx->priv_data;
-    VpeH26xEncFrm *frame_queued = NULL;
-    VpiCtrlCmdParam cmd;
-    int i;
-
-    /*find the need_frame_index */
-    for (i = 0; i < MAX_WAIT_DEPTH; i++) {
-        if (enc_ctx->frame_queue_for_enc[i].state == 1) {
-            frame_queued = &enc_ctx->frame_queue_for_enc[i];
-            if (frame_queued->frame_index == consumed_frame_index) {
-                goto find_pic;
-            }
-        }
-    }
-
-    if (i == MAX_WAIT_DEPTH)
-        return;
-
-find_pic:
-    frame_queued->frame_index       = -1;
-    frame_queued->state             = 0;
-    frame_queued->in_pass_one_queue = 0;
-    av_frame_unref(frame_queued->frame);
-    if (enc_ctx->force_idr) {
-        cmd.cmd = VPI_CMD_H26xENC_UPDATE_INJECTIONNUM;
-        enc_ctx->api->control(enc_ctx->ctx, (void *)&cmd, NULL);
-    }
-}
-
-/**
- * Output the encoded data to AVPacket
- * The encoded data in VpePaket is outputed to AVPacket, unref/free the
- * consumed AVFrame buffer in the queue, output non-empty AVPacket info
- * according to the return value of the VPE encoding function.
- *
- * @param avctx AVCodec context
- * @param av_packet output AVPacket
- * @param vpi_packet contain the encoded data from VPE encoder
- * @param enc_ret the return value of VPE encoding function
- * @return 0 on success, negative error code AVERROR_xxx on failure
- */
-static int vpe_h26xe_output_avpacket(AVCodecContext *avctx, AVPacket *av_packet,
-                                     VpiPacket *vpi_packet, int enc_ret)
-{
-    int ret = 0;
-
-    switch (enc_ret) {
-    /*output AVPacket at encoder start stage according to enc_ret*/
-    case VPI_ENC_START_OK: /*OK returned at encoder's start stage*/
-        if (vpe_h26xe_output_es_to_avpacket(av_packet, vpi_packet) < 0) {
-            vpe_h26xe_av_frame_free(avctx);
-            return AVERROR_INVALIDDATA;
-        }
-        break;
-    case VPI_ENC_START_ERROR: /*ERROR returned at encoder's start stage*/
-        vpe_h26xe_av_frame_free(avctx);
-        av_log(avctx, AV_LOG_ERROR, "H26x enocoding start fails. ret = %d\n",
-               enc_ret);
-        ret = AVERROR_INVALIDDATA;
-        break;
-
-    /*output AVPacket at encoder encoding stage according to enc_ret*/
-    case VPI_ENC_ENC_OK: /*OK returned at encoder's encoding stage*/
-        vpe_h26xe_av_frame_unref(avctx, vpi_packet->index_encoded);
-        ret = AVERROR(EAGAIN);
-        break;
-    case VPI_ENC_ENC_FRM_ENQUEUE: /*FRM_ENQUEUE returned at encoding stage*/
-        ret = AVERROR(EAGAIN);
-        break;
-    case VPI_ENC_ENC_READY: /*READY returned at encoder's encoding stage*/
-        if (vpe_h26xe_output_es_update_statis(avctx, av_packet, vpi_packet) <
-            0) {
-            ret = AVERROR_INVALIDDATA;
-            av_log(avctx, AV_LOG_ERROR, "h26xe fails at VPI_ENC_ENC_READY\n");
-        }
-        vpe_h26xe_av_frame_unref(avctx, vpi_packet->index_encoded);
-        break;
-    case VPI_ENC_ENC_ERROR: /*ERROR returned at encoder's encoding stage*/
-        vpe_h26xe_av_frame_free(avctx);
-        ret = AVERROR_INVALIDDATA;
-        break;
-
-    /*output AVPacket at encoder flushing stage according to enc_ret*/
-    case VPI_ENC_FLUSH_IDLE_READY: /*READY returned at FLUSH_IDLE stage*/
-    case VPI_ENC_FLUSH_PREPARE: /*READY at FLUSH_PREPARE stage*/
-    case VPI_ENC_FLUSH_TRANSPIC_READY: /*READY at FLUSH_TRANSPIC stage*/
-    case VPI_ENC_FLUSH_ENCDATA_READY: /*READY at FLUSH_ENCDATA stage*/
-        if (vpe_h26xe_output_es_update_statis(avctx, av_packet, vpi_packet) <
-            0) {
-            ret = AVERROR_INVALIDDATA;
-            av_log(avctx, AV_LOG_ERROR, "h26xe fails at FLUSH READY\n");
-        }
-        vpe_h26xe_av_frame_unref(avctx, vpi_packet->index_encoded);
-        break;
-    case VPI_ENC_FLUSH_FINISH_OK: /*OK returned at FLUSH_FINISH stage*/
-        if (vpe_h26xe_output_es_to_avpacket(av_packet, vpi_packet) < 0) {
-            ret = AVERROR_INVALIDDATA;
-            av_log(avctx, AV_LOG_ERROR,
-                   "h26xe fails at VPI_ENC_FLUSH_FINISH_OK\n");
-        }
-        vpe_h26xe_av_frame_free(avctx);
-        break;
-
-    case VPI_ENC_FLUSH_IDLE_ERROR: /*ERROR returned at FLUSH_IDLE stage*/
-    case VPI_ENC_FLUSH_TRANSPIC_ERROR: /*ERROR at FLUSH_TRANSPIC stage*/
-    case VPI_ENC_FLUSH_ENCDATA_ERROR: /*ERROR at FLUSH_ENCDATA stage*/
-    case VPI_ENC_FLUSH_FINISH_ERROR: /*ERROR at FLUSH_FINISH stage*/
-        vpe_h26xe_av_frame_free(avctx);
-        ret = AVERROR_INVALIDDATA;
-        break;
-    case VPI_ENC_FLUSH_IDLE_OK:
-        ret = 0;
-        break;
-    case VPI_ENC_FLUSH_FINISH_END: /*END at FLUSH_FINISH stage*/
-        vpe_h26xe_av_frame_free(avctx);
-        ret = AVERROR_EOF;
-        break;
-    }
-    return ret;
-}
 
 static int vpe_h26x_encode_create_param_list(AVCodecContext *avctx,
                                              char *enc_params,
@@ -338,8 +131,6 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     }
 
     memset(&enc_ctx->h26x_enc_cfg, 0, sizeof(VpiH26xEncCfg));
-    memset(enc_ctx->frame_queue_for_enc, 0,
-           sizeof(enc_ctx->frame_queue_for_enc));
 
     /*Get HW frame. The avctx->hw_frames_ctx is the reference to the
       AVHWFramesContext describing the input frame for h26x encoder*/
@@ -357,13 +148,12 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     frame_hwctx  = vpeframe_ctx->frame;
 
     if (avctx->codec->id == AV_CODEC_ID_HEVC) {
-        sprintf(&enc_ctx->module_name[0], "%s", "HEVCENC");
+        strcpy(enc_ctx->h26x_enc_cfg.module_name, "HEVCENC");
     } else if (avctx->codec->id == AV_CODEC_ID_H264) {
-        sprintf(&enc_ctx->module_name[0], "%s", "H264ENC");
+        strcpy(enc_ctx->h26x_enc_cfg.module_name, "H264ENC");
     }
 
     /*Initialize the VPE h26x encoder configuration*/
-    strcpy(enc_ctx->h26x_enc_cfg.module_name, enc_ctx->module_name);
     enc_ctx->h26x_enc_cfg.crf    = enc_ctx->crf;
     enc_ctx->h26x_enc_cfg.preset = enc_ctx->preset;
     if (avctx->codec->id == AV_CODEC_ID_HEVC) {
@@ -424,112 +214,196 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     return 0;
 }
 
+static int vpe_h26xenc_input_frame(AVFrame *input_image,
+                                   VpiFrame *out_frame)
+{
+    VpiFrame *in_vpi_frame;
+    if (input_image) {
+        in_vpi_frame           = (VpiFrame *)input_image->data[0];
+        out_frame->width       = input_image->width;
+        out_frame->height      = input_image->height;
+        out_frame->linesize[0] = input_image->linesize[0];
+        out_frame->linesize[1] = input_image->linesize[1];
+        out_frame->linesize[2] = input_image->linesize[2];
+        out_frame->key_frame   = input_image->key_frame;
+        out_frame->pts         = input_image->pts;
+        out_frame->pkt_dts     = input_image->pkt_dts;
+        out_frame->data[0]     = in_vpi_frame->data[0];
+        out_frame->data[1]     = in_vpi_frame->data[1];
+        out_frame->data[2]     = in_vpi_frame->data[2];
+        out_frame->opaque      = (void *)input_image;
+    } else {
+        memset(out_frame, 0, sizeof(VpiFrame));
+    }
+    return 0;
+}
+
 static int vpe_h26x_encode_send_frame(AVCodecContext *avctx,
                                       const AVFrame *input_frame)
 {
-    int i                       = 0;
-    int ret                     = 0;
-    VpeH26xEncFrm *frame_queued = NULL;
-    VpeH26xEncCtx *enc_ctx      = (VpeH26xEncCtx *)avctx->priv_data;
-    VpiFrame *cur_vpi_frame, *temp_vpi_frame, queued_vpi_frame;
+    int i                   = 0;
+    int ret                 = 0;
+    VpeH26xEncFrm *transpic = NULL;
+    VpeH26xEncCtx *enc_ctx  = (VpeH26xEncCtx *)avctx->priv_data;
+    VpiFrame *vpi_frame     = NULL;
     VpiCtrlCmdParam cmd;
 
-    if (!input_frame) {
-        enc_ctx->no_input_frm = 1;
-        cmd.cmd               = VPI_CMD_H26xENC_SET_NO_INFRM;
-        cmd.data              = &enc_ctx->no_input_frm;
-        ret = enc_ctx->api->control(enc_ctx->ctx, (void *)&cmd, NULL);
-        if (ret != 0) {
-            av_log(enc_ctx, AV_LOG_ERROR, "H26x_enc control NO_INFRM failed\n");
-            return AVERROR_EXTERNAL;
-        }
-        return ret;
+    cmd.cmd  = VPI_CMD_H26xENC_GET_EMPTY_FRAME_SLOT;
+    cmd.data = NULL;
+    ret = enc_ctx->api->control(enc_ctx->ctx,
+                    (void*)&cmd, (void *)&vpi_frame);
+    if (ret != 0 || vpi_frame == NULL) {
+        return AVERROR_EXTERNAL;
     }
 
-    cur_vpi_frame = (VpiFrame *)input_frame->data[0];
-    cur_vpi_frame->used_cnt++;
-
-    enc_ctx->no_input_frm = 0;
-    /*Look for empty wait member in the queue for input_frame storing*/
     for (i = 0; i < MAX_WAIT_DEPTH; i++) {
-        if (enc_ctx->frame_queue_for_enc[i].state == 0) {
-            frame_queued = (VpeH26xEncFrm *)&enc_ctx->frame_queue_for_enc[i];
-
-            /*Fill the queue member with input_frame*/
-            frame_queued->state             = 1;
-            frame_queued->frame_index       = enc_ctx->frame_index;
-            frame_queued->in_pass_one_queue = 0;
-            if (!frame_queued->frame) {
-                frame_queued->frame = av_frame_alloc();
-                if (!frame_queued->frame) {
-                    av_log(enc_ctx, AV_LOG_ERROR,
-                           "No av frame mem alloc for enc data\n");
-                    return AVERROR(ENOMEM);
-                }
-            }
-            av_frame_unref(frame_queued->frame);
-            ret = av_frame_ref(frame_queued->frame, input_frame);
-            if (ret < 0)
-                return ret;
-
-            /*Fill vpi_frame with the frame info and enqueue at VPI layer*/
-            temp_vpi_frame          = (VpiFrame *)frame_queued->frame->data[0];
-            queued_vpi_frame.width  = frame_queued->frame->width;
-            queued_vpi_frame.height = frame_queued->frame->height;
-            queued_vpi_frame.linesize[0] = frame_queued->frame->linesize[0];
-            queued_vpi_frame.linesize[1] = frame_queued->frame->linesize[1];
-            queued_vpi_frame.linesize[2] = frame_queued->frame->linesize[2];
-            queued_vpi_frame.key_frame   = frame_queued->frame->key_frame;
-            queued_vpi_frame.pts         = frame_queued->frame->pts;
-            queued_vpi_frame.pkt_dts     = frame_queued->frame->pkt_dts;
-            queued_vpi_frame.data[0]     = temp_vpi_frame->data[0];
-            queued_vpi_frame.data[1]     = temp_vpi_frame->data[1];
-            queued_vpi_frame.data[2]     = temp_vpi_frame->data[2];
-            cmd.cmd                      = VPI_CMD_H26xENC_ENQUEUE_VPIFRAME;
-            cmd.data                     = &queued_vpi_frame;
-            ret = enc_ctx->api->control(enc_ctx->ctx, (void *)&cmd, NULL);
-            enc_ctx->frame_index++;
-
+        if (enc_ctx->pic_wait_list[i].state == 0) {
+            transpic = &enc_ctx->pic_wait_list[i];
             break;
         }
     }
-    if (i == MAX_WAIT_DEPTH)
-        ret = AVERROR(EAGAIN);
 
-    return ret;
+    if (i == MAX_WAIT_DEPTH) {
+        return AVERROR_BUFFER_TOO_SMALL;
+    }
+    transpic->state = 1;
+    if (input_frame) {
+        if (!transpic->frame) {
+            transpic->frame = av_frame_alloc();
+            if (!transpic->frame)
+                return AVERROR(ENOMEM);
+        }
+        av_frame_unref(transpic->frame);
+        av_frame_ref(transpic->frame, input_frame);
+        vpe_h26xenc_input_frame(transpic->frame, vpi_frame);
+    } else {
+        av_log(enc_ctx, AV_LOG_DEBUG, "input image is empty, received EOF\n");
+        vpe_h26xenc_input_frame(NULL, vpi_frame);
+    }
+
+    enc_ctx->api->encode_put_frame(enc_ctx->ctx, (void*)vpi_frame);
+    return 0;
+}
+
+static int vpe_h26xenc_consume_pic(AVCodecContext *avctx,
+                                       VpeH26xEncCtx *ctx,
+                                       AVFrame *consume_frame)
+{
+    VpeH26xEncFrm *transpic = NULL;
+    int i;
+
+    for (i = 0; i < MAX_WAIT_DEPTH; i++) {
+        if (ctx->pic_wait_list[i].state == 1) {
+            transpic = &ctx->pic_wait_list[i];
+            if (transpic->frame == consume_frame)
+                goto find_pic;
+        }
+    }
+    if (i == MAX_WAIT_DEPTH) {
+        av_log(avctx, AV_LOG_ERROR,
+               "avframe %p not matched\n", consume_frame);
+        return AVERROR(EINVAL);
+    }
+
+find_pic:
+    transpic->state = 0;
+
+    av_frame_unref(transpic->frame);
+    transpic->frame = NULL;
+    return 0;
+}
+
+static av_cold int vpe_h26xenc_free_frames(AVCodecContext *avctx)
+{
+    VpeH26xEncCtx *ctx   = (VpeH26xEncCtx *)avctx->priv_data;
+    VpiCtrlCmdParam cmd;
+    AVFrame *frame_ref = NULL;
+    int ret = 0;
+
+    do {
+        cmd.cmd = VPI_CMD_H26xENC_CONSUME_PIC;
+        ret     = ctx->api->control(ctx->ctx, (void *)&cmd,
+                                    (void *)&frame_ref);
+        if (ret < 0)
+            return AVERROR_EXTERNAL;
+
+        if (frame_ref) {
+            ret = vpe_h26xenc_consume_pic(avctx, ctx, frame_ref);
+            if (ret != 0)
+                return ret;
+        } else {
+            break;
+        }
+    } while(1);
+
+    return 0;
+}
+
+static void vpe_h26xenc_output_packet(VpiPacket *vpi_packet,
+                                      AVPacket *out_packet)
+{
+    out_packet->size = vpi_packet->size;
+    out_packet->pts  = vpi_packet->pts;
+    out_packet->dts  = vpi_packet->pkt_dts;
 }
 
 static int vpe_h26x_encode_receive_packet(AVCodecContext *avctx,
-                                          AVPacket *av_pkt)
+                                          AVPacket *avpkt)
 {
-    int ret     = 0;
-    int enc_ret = 0;
-    VpiFrame vpi_frame;
+    VpeH26xEncCtx *ctx = (VpeH26xEncCtx *)avctx->priv_data;
     VpiPacket vpi_packet;
     VpiCtrlCmdParam cmd;
-    VpeH26xEncCtx *enc_ctx = (VpeH26xEncCtx *)avctx->priv_data;
+    int stream_size = 0;
+    int ret = 0;
 
-    memset(&vpi_frame, 0, sizeof(VpiFrame));
-    memset(&vpi_packet, 0, sizeof(VpiPacket));
-
-    /*Call the VPE h26x encoder get_packet API to get VpiPacket*/
-    enc_ret = enc_ctx->api->encode_get_packet(enc_ctx->ctx, &vpi_packet);
-    if (enc_ret >= VPI_ENC_FLUSH_IDLE_READY) {
-        /*No input at flush stage*/
-        enc_ctx->no_input_frm = 1;
-        cmd.cmd               = VPI_CMD_H26xENC_SET_NO_INFRM;
-        cmd.data              = &enc_ctx->no_input_frm;
-        if (enc_ctx->api->control(enc_ctx->ctx, (void *)&cmd, NULL) != 0) {
-            av_log(avctx, AV_LOG_ERROR, "H26x_enc control NO_INFRM failed");
-            return AVERROR_EXTERNAL;
-        }
-    } else {
-        enc_ctx->no_input_frm = 0;
+    ret = vpe_h26xenc_free_frames(avctx);
+    if (ret != 0) {
+        return ret;
     }
 
-    ret = vpe_h26xe_output_avpacket(avctx, av_pkt, &vpi_packet, enc_ret);
+    cmd.cmd = VPI_CMD_H26xENC_GET_FRAME_PACKET;
+    ret = ctx->api->control(ctx->ctx, &cmd, (void *)&stream_size);
+    if (ret == -1) {
+        return AVERROR(EAGAIN);
+    } else if (ret == 1) {
+        return AVERROR_EOF;
+    }
+
+    /*Allocate AVPacket bufffer*/
+    ret = av_new_packet(avpkt, stream_size);
+    if (ret != 0)
+       return ret;
+
+    vpi_packet.data = avpkt->data;
+    vpi_packet.size = stream_size;
+    ret = ctx->api->encode_get_packet(ctx->ctx, (void *)&vpi_packet);
+    if (ret == 0) {
+        /*Convert output packet from VpiPacket to AVPacket*/
+        vpe_h26xenc_output_packet(&vpi_packet, avpkt);
+    } else {
+        av_log(avctx, AV_LOG_ERROR, "H26x enc encode failed\n");
+        ret = AVERROR_EXTERNAL;
+    }
 
     return ret;
+
+}
+
+static av_cold void vpe_h26x_enc_consume_flush(AVCodecContext *avctx)
+{
+    VpeH26xEncCtx *ctx      = (VpeH26xEncCtx *)avctx->priv_data;
+    VpeH26xEncFrm *transpic = NULL;
+    int i;
+
+    for (i = 0; i < MAX_WAIT_DEPTH; i++) {
+        if (ctx->pic_wait_list[i].state == 1) {
+            transpic = &ctx->pic_wait_list[i];
+            if (transpic->frame) {
+                av_frame_free(&transpic->frame);
+            }
+            transpic->state = 0;
+        }
+    }
 }
 
 static av_cold int vpe_h26x_encode_close(AVCodecContext *avctx)
@@ -542,7 +416,7 @@ static av_cold int vpe_h26x_encode_close(AVCodecContext *avctx)
     if (enc_ctx->ctx) {
         enc_ctx->api->close(enc_ctx->ctx);
     }
-    vpe_h26xe_av_frame_free(avctx);
+    vpe_h26x_enc_consume_flush(avctx);
     av_buffer_unref(&enc_ctx->hwframe);
     if (enc_ctx->ctx) {
         ret = vpi_destroy(enc_ctx->ctx);
