@@ -165,7 +165,7 @@ static void vpe_vp9enc_output_packet(VpiPacket *vpi_packet,
     out_packet->dts  = vpi_packet->pkt_dts;
 }
 
-static int vpe_vp9enc_input_frame(AVFrame *input_image,
+static void vpe_vp9enc_input_frame(AVFrame *input_image,
                                   VpiFrame *out_frame)
 {
     VpiFrame *in_vpi_frame;
@@ -186,8 +186,6 @@ static int vpe_vp9enc_input_frame(AVFrame *input_image,
     } else {
         memset(out_frame, 0, sizeof(VpiFrame));
     }
-
-    return 0;
 }
 
 static void vpe_dump_pic(AVCodecContext *avctx, const char *str, const char *sep, VpeEncVp9Ctx *ctx)
@@ -251,7 +249,10 @@ static int vpe_vp9enc_receive_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
         vpe_vp9enc_input_frame(NULL, vpi_frame);
     }
 
-    ctx->vpi->encode_put_frame(ctx->ctx, (void*)vpi_frame);
+    ret = ctx->vpi->encode_put_frame(ctx->ctx, (void*)vpi_frame);
+    if (ret) {
+        return AVERROR_EXTERNAL;
+    }
 
     vpe_dump_pic(avctx, "vpe_vp9enc_receive_pic", " <---", ctx);
     return 0;

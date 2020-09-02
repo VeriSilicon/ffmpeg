@@ -214,7 +214,7 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int vpe_h26xenc_input_frame(AVFrame *input_image,
+static void vpe_h26xenc_input_frame(AVFrame *input_image,
                                    VpiFrame *out_frame)
 {
     VpiFrame *in_vpi_frame;
@@ -235,7 +235,6 @@ static int vpe_h26xenc_input_frame(AVFrame *input_image,
     } else {
         memset(out_frame, 0, sizeof(VpiFrame));
     }
-    return 0;
 }
 
 static int vpe_h26x_encode_send_frame(AVCodecContext *avctx,
@@ -281,7 +280,10 @@ static int vpe_h26x_encode_send_frame(AVCodecContext *avctx,
         vpe_h26xenc_input_frame(NULL, vpi_frame);
     }
 
-    enc_ctx->api->encode_put_frame(enc_ctx->ctx, (void*)vpi_frame);
+    ret = enc_ctx->api->encode_put_frame(enc_ctx->ctx, (void*)vpi_frame);
+    if (ret) {
+        return AVERROR_EXTERNAL;
+    }
     return 0;
 }
 
