@@ -366,7 +366,7 @@ static int vpe_device_create(AVHWDeviceContext *device_ctx, const char *device,
             }
         }
 
-        opt = av_dict_get(opts, "fbloglevel", NULL, 0);
+        opt = av_dict_get(opts, "vpeloglevel", NULL, 0);
         if (opt) {
             priv->sys_info->sys_log_level = atoi(opt->value);
         }
