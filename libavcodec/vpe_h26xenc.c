@@ -469,10 +469,12 @@ static const AVOption vpe_h26x_encode_options[] = {
       0,
       1,
       .flags = FLAGS },
+
+    /* Detail parameters is described in
+       https://github.com/VeriSilicon/vpe#H264-H265-Encoder */
     { "enc_params",
       "Override the VPE h264/hevc configuration using a :-separated list of "
-      "key=value parameters. For more details, please refer to the document at"
-      "https://github.com/VeriSilicon/VPE/blob/master/doc/enc_params_h26x.md",
+      "key=value parameters.",
       OFFSETOPT(enc_params),
       AV_OPT_TYPE_STRING,
       { .str = NULL },
