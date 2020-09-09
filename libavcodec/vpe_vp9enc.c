@@ -373,7 +373,18 @@ static av_cold void vpe_enc_vp9_consume_flush(AVCodecContext *avctx)
 
 static av_cold int vpe_enc_vp9_close(AVCodecContext *avctx)
 {
+    AVHWFramesContext *hwframe_ctx;
+    AVHWDeviceContext *hwdevice_ctx;
+    AVVpeDeviceContext *vpedev_ctx;
     VpeEncVp9Ctx *ctx = avctx->priv_data;
+
+    if (!avctx->hw_device_ctx) {
+        hwframe_ctx = (AVHWFramesContext *)ctx->hw_frame->data;
+        vpedev_ctx  = hwframe_ctx->device_ctx->hwctx;
+    } else {
+        hwdevice_ctx = (AVHWDeviceContext *)avctx->hw_device_ctx->data;
+        vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
+    }
 
     vpe_enc_vp9_release_param_list(avctx);
     if (ctx->ctx) {
@@ -383,7 +394,7 @@ static av_cold int vpe_enc_vp9_close(AVCodecContext *avctx)
     av_buffer_unref(&ctx->hw_frame);
     av_buffer_unref(&ctx->hw_device);
     if (ctx->ctx) {
-        if (vpi_destroy(ctx->ctx)) {
+        if (vpi_destroy(ctx->ctx, vpedev_ctx->device)) {
             return AVERROR_EXTERNAL;
         }
     }
@@ -395,6 +406,8 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
     VpeEncVp9Ctx *ctx = avctx->priv_data;
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
+    AVHWDeviceContext *hwdevice_ctx;
+    AVVpeDeviceContext *vpedev_ctx;
     VpiEncVp9Opition *psetting = &ctx->vp9cfg;
     int ret                    = 0;
 
@@ -405,6 +418,13 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
     }
     hwframe_ctx  = (AVHWFramesContext *)ctx->hw_frame->data;
     vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
+
+    if (!avctx->hw_device_ctx) {
+        vpedev_ctx = hwframe_ctx->device_ctx->hwctx;
+    } else {
+        hwdevice_ctx = (AVHWDeviceContext *)avctx->hw_device_ctx->data;
+        vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
+    }
 
     avctx->pix_fmt          = AV_PIX_FMT_YUV420P;
     psetting->preset        = ctx->preset;
@@ -457,7 +477,7 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
         }
     }
 
-    ret = vpi_create(&ctx->ctx, &ctx->vpi, VP9ENC_VPE);
+    ret = vpi_create(&ctx->ctx, &ctx->vpi, vpedev_ctx->device, VP9ENC_VPE);
     if (ret != 0) {
         av_log(avctx, AV_LOG_ERROR, "VP9 enc vpi_create failed\n");
         return AVERROR_EXTERNAL;

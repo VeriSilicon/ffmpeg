@@ -121,16 +121,9 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     VpiFrame *frame_hwctx;
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
+    AVHWDeviceContext *hwdevice_ctx;
+    AVVpeDeviceContext *vpedev_ctx;
     VpeH26xEncCtx *enc_ctx = (VpeH26xEncCtx *)avctx->priv_data;
-
-    /*Create context and get the APIs for h26x encoder from VPI layer */
-    ret = vpi_create(&enc_ctx->ctx, &enc_ctx->api, H26XENC_VPE);
-    if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "h26x_enc vpe create failure %d\n", ret);
-        return AVERROR_EXTERNAL;
-    }
-
-    memset(&enc_ctx->h26x_enc_cfg, 0, sizeof(VpiH26xEncCfg));
 
     /*Get HW frame. The avctx->hw_frames_ctx is the reference to the
       AVHWFramesContext describing the input frame for h26x encoder*/
@@ -146,6 +139,22 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     hwframe_ctx  = (AVHWFramesContext *)enc_ctx->hwframe->data;
     vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
     frame_hwctx  = vpeframe_ctx->frame;
+
+    if (!avctx->hw_device_ctx) {
+        vpedev_ctx = hwframe_ctx->device_ctx->hwctx;
+    } else {
+        hwdevice_ctx = (AVHWDeviceContext *)avctx->hw_device_ctx->data;
+        vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
+    }
+
+    /*Create context and get the APIs for h26x encoder from VPI layer */
+    ret = vpi_create(&enc_ctx->ctx, &enc_ctx->api, vpedev_ctx->device, H26XENC_VPE);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "h26x_enc vpe create failure %d\n", ret);
+        return AVERROR_EXTERNAL;
+    }
+
+    memset(&enc_ctx->h26x_enc_cfg, 0, sizeof(VpiH26xEncCfg));
 
     if (avctx->codec->id == AV_CODEC_ID_HEVC) {
         strcpy(enc_ctx->h26x_enc_cfg.module_name, "HEVCENC");
@@ -410,8 +419,19 @@ static av_cold void vpe_h26x_enc_consume_flush(AVCodecContext *avctx)
 
 static av_cold int vpe_h26x_encode_close(AVCodecContext *avctx)
 {
+    AVHWFramesContext *hwframe_ctx;
+    AVHWDeviceContext *hwdevice_ctx;
+    AVVpeDeviceContext *vpedev_ctx;
     VpeH26xEncCtx *enc_ctx = (VpeH26xEncCtx *)avctx->priv_data;
     int ret                = 0;
+
+    if (!avctx->hw_device_ctx) {
+        hwframe_ctx = (AVHWFramesContext *)enc_ctx->hwframe->data;
+        vpedev_ctx  = hwframe_ctx->device_ctx->hwctx;
+    } else {
+        hwdevice_ctx = (AVHWDeviceContext *)avctx->hw_device_ctx->data;
+        vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
+    }
 
     vpe_h26x_encode_release_param_list(avctx);
 
@@ -421,7 +441,7 @@ static av_cold int vpe_h26x_encode_close(AVCodecContext *avctx)
     vpe_h26x_enc_consume_flush(avctx);
     av_buffer_unref(&enc_ctx->hwframe);
     if (enc_ctx->ctx) {
-        ret = vpi_destroy(enc_ctx->ctx);
+        ret = vpi_destroy(enc_ctx->ctx, vpedev_ctx->device);
         if (ret < 0) {
             av_log(avctx, AV_LOG_ERROR, "h26x encoder vpi_destroy failure\n");
         }

@@ -89,6 +89,8 @@ int ff_vpe_decode_init(AVCodecContext *avctx, VpiPlugin type)
 {
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
+    AVHWDeviceContext *hwdevice_ctx;
+    AVVpeDeviceContext *vpedev_ctx;
     VpeDecCtx *dec_ctx = avctx->priv_data;
     VpiCtrlCmdParam cmd_param;
     int ret;
@@ -102,9 +104,11 @@ int ff_vpe_decode_init(AVCodecContext *avctx, VpiPlugin type)
 
     hwframe_ctx  = (AVHWFramesContext *)avctx->hw_frames_ctx->data;
     vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
+    hwdevice_ctx = (AVHWDeviceContext *)avctx->hw_device_ctx->data;
+    vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
 
     // Create the VPE context
-    ret = vpi_create(&dec_ctx->ctx, &dec_ctx->vpi, type);
+    ret = vpi_create(&dec_ctx->ctx, &dec_ctx->vpi, vpedev_ctx->device, type);
     if (ret) {
         av_log(avctx, AV_LOG_ERROR, "vpi create failure ret %d\n", ret);
         return AVERROR_EXTERNAL;
@@ -482,8 +486,13 @@ static av_cold void vpe_dec_consume_flush(VpeDecCtx *dec_ctx)
 
 av_cold int ff_vpe_decode_close(AVCodecContext *avctx)
 {
+    AVHWDeviceContext *hwdevice_ctx;
+    AVVpeDeviceContext *vpedev_ctx;
     VpeDecCtx *dec_ctx = avctx->priv_data;
     VpeDecFrame *cur_frame;
+
+    hwdevice_ctx = (AVHWDeviceContext *)avctx->hw_device_ctx->data;
+    vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
 
     vpe_clear_unused_frames(dec_ctx);
     if (dec_ctx->ctx == NULL) {
@@ -499,7 +508,7 @@ av_cold int ff_vpe_decode_close(AVCodecContext *avctx)
         av_freep(&cur_frame);
         cur_frame = dec_ctx->frame_list;
     }
-    vpi_destroy(dec_ctx->ctx);
+    vpi_destroy(dec_ctx->ctx, vpedev_ctx->device);
 
     return 0;
 }

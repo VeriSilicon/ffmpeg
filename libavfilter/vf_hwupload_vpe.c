@@ -43,13 +43,9 @@ typedef struct VpeUploadContext {
 
 static av_cold void vpe_upload_uninit(AVFilterContext *ctx)
 {
-    VpeUploadContext *s             = ctx->priv;
-    AVHWFramesContext *hwframe_ctx  = NULL;
-    AVVpeFramesContext *frame_hwctx = NULL;
-
-    if (s->hwframe) hwframe_ctx = (AVHWFramesContext *)s->hwframe->data;
-
-    if (hwframe_ctx) frame_hwctx = hwframe_ctx->hwctx;
+    VpeUploadContext *s = ctx->priv;
+    AVHWDeviceContext *hwdevice_ctx;
+    AVVpeDeviceContext *vpedev_ctx;
 
     if (s->ctx) {
         s->vpi->close(s->ctx);
@@ -57,6 +53,12 @@ static av_cold void vpe_upload_uninit(AVFilterContext *ctx)
 
     av_buffer_unref(&s->hwframe);
     av_buffer_unref(&s->hwdevice);
+
+    if (s->ctx) {
+        hwdevice_ctx = (AVHWDeviceContext *)ctx->hw_device_ctx->data;
+        vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
+        vpi_destroy(s->ctx, vpedev_ctx->device);
+    }
 }
 
 static int vpe_upload_config_input(AVFilterLink *inlink)
@@ -66,6 +68,8 @@ static int vpe_upload_config_input(AVFilterLink *inlink)
 
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
+    AVHWDeviceContext *hwdevice_ctx;
+    AVVpeDeviceContext *vpedev_ctx;
 
     int ret = 0;
     VpiCtrlCmdParam cmd_param;
@@ -105,8 +109,11 @@ static int vpe_upload_config_input(AVFilterLink *inlink)
         return AVERROR(ENOMEM);
     }
 
+    hwdevice_ctx = (AVHWDeviceContext *)ctx->hw_device_ctx->data;
+    vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
+
     // Create the VPE context
-    ret = vpi_create(&s->ctx, &s->vpi, HWUPLOAD_VPE);
+    ret = vpi_create(&s->ctx, &s->vpi, vpedev_ctx->device, HWUPLOAD_VPE);
     if (ret) {
         av_log(ctx, AV_LOG_ERROR, "vpi create failure ret %d\n", ret);
         return AVERROR_EXTERNAL;

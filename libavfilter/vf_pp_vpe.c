@@ -92,17 +92,8 @@ static const enum AVPixelFormat output_pix_fmts[] = {
 
 static av_cold int vpe_pp_init(AVFilterContext *avf_ctx)
 {
-    VpePPFilter *ctx = avf_ctx->priv;
     int ret          = 0;
     AVFilterPad pad = { 0 };
-
-    ret = vpi_create(&ctx->ctx, &ctx->vpi, PP_VPE);
-    if (ret)
-        return AVERROR_EXTERNAL;
-
-    ret = ctx->vpi->init(ctx->ctx, NULL);
-    if (ret)
-        return AVERROR_EXTERNAL;
 
     pad.type = AVMEDIA_TYPE_VIDEO;
     pad.name = "output0";
@@ -115,13 +106,24 @@ static av_cold int vpe_pp_init(AVFilterContext *avf_ctx)
 
 static av_cold void vpe_pp_uninit(AVFilterContext *avf_ctx)
 {
+    AVHWFramesContext *hwframe_ctx;
+    AVHWDeviceContext *hwdevice_ctx;
+    AVVpeDeviceContext *vpedev_ctx;
     VpePPFilter *ctx = avf_ctx->priv;
 
     if (ctx->hw_device) {
+        if (!avf_ctx->hw_device_ctx) {
+            hwframe_ctx = (AVHWFramesContext *)ctx->hw_frame->data;
+            vpedev_ctx  = hwframe_ctx->device_ctx->hwctx;
+        } else {
+            hwdevice_ctx = (AVHWDeviceContext *)avf_ctx->hw_device_ctx->data;
+            vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
+        }
+
         ctx->vpi->close(ctx->ctx);
         av_buffer_unref(&ctx->hw_frame);
         av_buffer_unref(&ctx->hw_device);
-        vpi_destroy(ctx->ctx);
+        vpi_destroy(ctx->ctx, vpedev_ctx->device);
         avf_ctx->priv = NULL;
     }
 }
@@ -310,6 +312,8 @@ static int vpe_pp_config_props(AVFilterLink *inlink)
     AVFilterContext *avf_ctx = inlink->dst;
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
+    AVHWDeviceContext *hwdevice_ctx;
+    AVVpeDeviceContext *vpedev_ctx;
     VpePPFilter *ctx  = avf_ctx->priv;
     VpiPPOpition *cfg = &ctx->cfg;
     VpiCtrlCmdParam cmd;
@@ -322,6 +326,21 @@ static int vpe_pp_config_props(AVFilterLink *inlink)
 
     hwframe_ctx  = (AVHWFramesContext *)ctx->hw_frame->data;
     vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
+    if (!avf_ctx->hw_device_ctx) {
+        vpedev_ctx = hwframe_ctx->device_ctx->hwctx;
+    } else {
+        hwdevice_ctx = (AVHWDeviceContext *)avf_ctx->hw_device_ctx->data;
+        vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
+    }
+
+    ret = vpi_create(&ctx->ctx, &ctx->vpi, vpedev_ctx->device, PP_VPE);
+    if (ret)
+        return AVERROR_EXTERNAL;
+
+    ret = ctx->vpi->init(ctx->ctx, NULL);
+    if (ret)
+        return AVERROR_EXTERNAL;
+
     /*Get config*/
     cfg->w           = inlink->w;
     cfg->h           = inlink->h;

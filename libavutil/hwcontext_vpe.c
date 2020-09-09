@@ -269,12 +269,13 @@ static int vpe_get_buffer(AVHWFramesContext *hwfc, AVFrame *frame)
 
 static void vpe_device_uninit(AVHWDeviceContext *device_ctx)
 {
-    VpeDeviceContext *priv = device_ctx->internal->priv;
+    AVVpeDeviceContext *hwctx = device_ctx->hwctx;
+    VpeDeviceContext *priv    = device_ctx->internal->priv;
 
     if (priv->media_proc) {
         if (priv->media_proc->ctx) {
             priv->media_proc->vpi->close(priv->media_proc->ctx);
-            vpi_destroy(priv->media_proc->ctx);
+            vpi_destroy(priv->media_proc->ctx, hwctx->device);
             priv->media_proc->ctx = NULL;
         }
         vpi_freep(&priv->media_proc);
@@ -283,7 +284,8 @@ static void vpe_device_uninit(AVHWDeviceContext *device_ctx)
 
 static int vpe_device_init(AVHWDeviceContext *device_ctx)
 {
-    VpeDeviceContext *priv = device_ctx->internal->priv;
+    AVVpeDeviceContext *hwctx = device_ctx->hwctx;
+    VpeDeviceContext *priv    = device_ctx->internal->priv;
     int ret = 0;
 
     ret = vpi_get_media_proc_struct(&priv->media_proc);
@@ -292,7 +294,7 @@ static int vpe_device_init(AVHWDeviceContext *device_ctx)
     }
 
     ret = vpi_create(&priv->media_proc->ctx, &priv->media_proc->vpi,
-                    HWDOWNLOAD_VPE);
+                      hwctx->device, HWDOWNLOAD_VPE);
     if (ret != 0)
         return AVERROR_EXTERNAL;
 
@@ -308,7 +310,7 @@ static void vpe_device_free(AVHWDeviceContext *device_ctx)
     AVVpeDeviceContext *hwctx = device_ctx->hwctx;
     VpeDevicePriv *priv = (VpeDevicePriv *)device_ctx->user_opaque;
 
-    vpi_destroy(priv->sys_info);
+    vpi_destroy(priv->sys_info, hwctx->device);
 
     vpi_freep(&priv->sys_info);
     av_freep(&priv);
@@ -372,7 +374,8 @@ static int vpe_device_create(AVHWDeviceContext *device_ctx, const char *device,
         }
     }
 
-    if (vpi_create(&priv->sys_info, &hwctx->func, HWCONTEXT_VPE) != 0) {
+    if (vpi_create(&priv->sys_info, &hwctx->func, hwctx->device,
+                    HWCONTEXT_VPE) != 0) {
         return AVERROR_EXTERNAL;
     }
 
