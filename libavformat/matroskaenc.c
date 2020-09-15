@@ -154,6 +154,7 @@ typedef struct MatroskaMuxContext {
     int                 is_dash;
     int                 dash_track_number;
     int                 allow_raw_vfw;
+    int                 flipped_raw_rgb;
     int                 default_mode;
 
     uint32_t            segment_uid[4];
@@ -764,6 +765,7 @@ static int mkv_write_codecprivate(AVFormatContext *s, AVIOContext *pb,
                                   int native_id, int qt_id)
 {
     AVIOContext *dyn_cp;
+    MatroskaMuxContext *mkv = s->priv_data;
     uint8_t *codecpriv;
     int ret, codecpriv_size;
 
@@ -802,7 +804,7 @@ static int mkv_write_codecprivate(AVFormatContext *s, AVIOContext *pb,
                 ret = AVERROR(EINVAL);
             }
 
-            ff_put_bmp_header(dyn_cp, par, 0, 0);
+            ff_put_bmp_header(dyn_cp, par, 0, 0, mkv->flipped_raw_rgb);
         }
     } else if (par->codec_type == AVMEDIA_TYPE_AUDIO) {
         unsigned int tag;
@@ -2007,7 +2009,7 @@ static int mkv_write_block(AVFormatContext *s, AVIOContext *pb,
     AVCodecParameters *par = s->streams[pkt->stream_index]->codecpar;
     mkv_track *track = &mkv->tracks[pkt->stream_index];
     uint8_t *data = NULL, *side_data = NULL;
-    int err = 0, offset = 0, size = pkt->size, side_data_size = 0;
+    int err = 0, offset = 0, size = pkt->size, side_data_size;
     int64_t ts = track->write_dts ? pkt->dts : pkt->pts;
     uint64_t additional_id;
     int64_t discard_padding = 0;
@@ -2118,17 +2120,17 @@ static int mkv_write_vtt_blocks(AVFormatContext *s, AVIOContext *pb, const AVPac
     mkv_track *track = &mkv->tracks[pkt->stream_index];
     ebml_master blockgroup;
     int id_size, settings_size, size;
-    uint8_t *id, *settings;
+    const char *id, *settings;
     int64_t ts = track->write_dts ? pkt->dts : pkt->pts;
     const int flags = 0;
 
-    id_size = 0;
     id = av_packet_get_side_data(pkt, AV_PKT_DATA_WEBVTT_IDENTIFIER,
                                  &id_size);
+    id = id ? id : "";
 
-    settings_size = 0;
     settings = av_packet_get_side_data(pkt, AV_PKT_DATA_WEBVTT_SETTINGS,
                                        &settings_size);
+    settings = settings ? settings : "";
 
     size = id_size + 1 + settings_size + 1 + pkt->size;
 
@@ -2182,7 +2184,7 @@ static int mkv_check_new_extra_data(AVFormatContext *s, const AVPacket *pkt)
     mkv_track *track        = &mkv->tracks[pkt->stream_index];
     AVCodecParameters *par  = s->streams[pkt->stream_index]->codecpar;
     uint8_t *side_data;
-    int side_data_size = 0, ret;
+    int side_data_size, ret;
 
     side_data = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA,
                                         &side_data_size);
@@ -2787,6 +2789,7 @@ static const AVOption options[] = {
     { "dash_track_number", "Track number for the DASH stream", OFFSET(dash_track_number), AV_OPT_TYPE_INT, { .i64 = 1 }, 1, INT_MAX, FLAGS },
     { "live", "Write files assuming it is a live stream.", OFFSET(is_live), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "allow_raw_vfw", "allow RAW VFW mode", OFFSET(allow_raw_vfw), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
+    { "flipped_raw_rgb", "Raw RGB bitmaps in VFW mode are stored bottom-up", OFFSET(flipped_raw_rgb), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, FLAGS },
     { "write_crc32", "write a CRC32 element inside every Level 1 element", OFFSET(write_crc), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, FLAGS },
     { "default_mode", "Controls how a track's FlagDefault is inferred", OFFSET(default_mode), AV_OPT_TYPE_INT, { .i64 = DEFAULT_MODE_INFER }, DEFAULT_MODE_INFER, DEFAULT_MODE_PASSTHROUGH, FLAGS, "default_mode" },
     { "infer", "For each track type, mark the first track of disposition default as default; if none exists, mark the first track as default.", 0, AV_OPT_TYPE_CONST, { .i64 = DEFAULT_MODE_INFER }, 0, 0, FLAGS, "default_mode" },

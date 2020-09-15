@@ -145,10 +145,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     maxpixels = maxpixels_per_frame * maxiteration;
     maxsamples = maxsamples_per_frame * maxiteration;
     switch (c->id) {
+    case AV_CODEC_ID_AGM:         maxpixels  /= 1024;  break;
     case AV_CODEC_ID_BINKVIDEO:   maxpixels  /= 32;    break;
     case AV_CODEC_ID_CFHD:        maxpixels  /= 128;   break;
     case AV_CODEC_ID_DIRAC:       maxpixels  /= 8192;  break;
-    case AV_CODEC_ID_DST:         maxsamples /= 8192;  break;
+    case AV_CODEC_ID_DST:         maxsamples /= 1<<20; break;
     case AV_CODEC_ID_DXV:         maxpixels  /= 32;    break;
     case AV_CODEC_ID_FFWAVESYNTH: maxsamples /= 16384; break;
     case AV_CODEC_ID_G2M:         maxpixels  /= 64;    break;
@@ -179,6 +180,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_TRUEMOTION2: maxpixels  /= 1024;  break;
     case AV_CODEC_ID_VP7:         maxpixels  /= 256;   break;
     case AV_CODEC_ID_VP9:         maxpixels  /= 4096;  break;
+    case AV_CODEC_ID_WMV3IMAGE:   maxpixels  /= 8192;  break;
     case AV_CODEC_ID_ZEROCODEC:   maxpixels  /= 128;   break;
     }
 

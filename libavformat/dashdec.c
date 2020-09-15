@@ -29,7 +29,7 @@
 #include "dash.h"
 
 #define INITIAL_BUFFER_SIZE 32768
-#define MAX_MANIFEST_SIZE 50 * 1024
+#define MAX_BPRINT_READ_SIZE (UINT_MAX - 1)
 #define DEFAULT_MANIFEST_SIZE 8 * 1024
 
 struct fragment {
@@ -1256,14 +1256,16 @@ static int parse_manifest(AVFormatContext *s, const char *url, AVIOContext *in)
     }
 
     filesize = avio_size(in);
-    if (filesize > MAX_MANIFEST_SIZE) {
+    filesize = filesize > 0 ? filesize : DEFAULT_MANIFEST_SIZE;
+
+    if (filesize > MAX_BPRINT_READ_SIZE) {
         av_log(s, AV_LOG_ERROR, "Manifest too large: %"PRId64"\n", filesize);
         return AVERROR_INVALIDDATA;
     }
 
-    av_bprint_init(&buf, (filesize > 0) ? filesize + 1 : DEFAULT_MANIFEST_SIZE, AV_BPRINT_SIZE_UNLIMITED);
+    av_bprint_init(&buf, filesize + 1, AV_BPRINT_SIZE_UNLIMITED);
 
-    if ((ret = avio_read_to_bprint(in, &buf, MAX_MANIFEST_SIZE)) < 0 ||
+    if ((ret = avio_read_to_bprint(in, &buf, MAX_BPRINT_READ_SIZE)) < 0 ||
         !avio_feof(in) ||
         (filesize = buf.len) == 0) {
         av_log(s, AV_LOG_ERROR, "Unable to read to manifest '%s'\n", url);
@@ -1943,6 +1945,7 @@ static int reopen_demux_for_component(AVFormatContext *s, struct representation 
     pls->ctx->flags = AVFMT_FLAG_CUSTOM_IO;
     pls->ctx->probesize = s->probesize > 0 ? s->probesize : 1024 * 4;
     pls->ctx->max_analyze_duration = s->max_analyze_duration > 0 ? s->max_analyze_duration : 4 * AV_TIME_BASE;
+    pls->ctx->interrupt_callback = s->interrupt_callback;
     ret = av_probe_input_buffer(&pls->pb, &in_fmt, "", NULL, 0, 0);
     if (ret < 0) {
         av_log(s, AV_LOG_ERROR, "Error when loading first fragment, playlist %d\n", (int)pls->rep_idx);
@@ -2001,6 +2004,20 @@ static int open_demux_for_component(AVFormatContext *s, struct representation *p
         st->id = i;
         avcodec_parameters_copy(st->codecpar, ist->codecpar);
         avpriv_set_pts_info(st, ist->pts_wrap_bits, ist->time_base.num, ist->time_base.den);
+
+        // copy disposition
+        st->disposition = ist->disposition;
+
+        // copy side data
+        for (int i = 0; i < ist->nb_side_data; i++) {
+            const AVPacketSideData *sd_src = &ist->side_data[i];
+            uint8_t *dst_data;
+
+            dst_data = av_stream_new_side_data(st, sd_src->type, sd_src->size);
+            if (!dst_data)
+                return AVERROR(ENOMEM);
+            memcpy(dst_data, sd_src->data, sd_src->size);
+        }
     }
 
     return 0;

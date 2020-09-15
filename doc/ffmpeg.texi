@@ -734,10 +734,6 @@ ffmpeg -dump_attachment:t "" -i INPUT
 Technical note -- attachments are implemented as codec extradata, so this
 option can actually be used to extract extradata from any stream, not just
 attachments.
-
-@item -noautorotate
-Disable automatically rotating video based on file metadata.
-
 @end table
 
 @section Video Options
@@ -819,6 +815,18 @@ Create the filtergraph specified by @var{filtergraph} and use it to
 filter the stream.
 
 This is an alias for @code{-filter:v}, see the @ref{filter_option,,-filter option}.
+
+@item -autorotate
+Automatically rotate the video according to file metadata. Enabled by
+default, use @option{-noautorotate} to disable it.
+
+@item -autoscale
+Automatically scale the video according to the resolution of first frame.
+Enabled by default, use @option{-noautoscale} to disable it. When autoscale is
+disabled, all output frames of filter graph might not be in the same resolution
+and may be inadequate for some encoder/muxer. Therefore, it is not recommended
+to disable it unless you really know what you are doing.
+Disable autoscale at your own risk.
 @end table
 
 @section Advanced Video options
@@ -1681,8 +1689,9 @@ not start from timestamp 0, such as transport streams.
 @item -thread_queue_size @var{size} (@emph{input})
 This option sets the maximum number of queued packets when reading from the
 file or device. With low latency / high rate live streams, packets may be
-discarded if they are not read in a timely manner; raising this value can
-avoid it.
+discarded if they are not read in a timely manner; setting this value can
+force ffmpeg to use a separate input thread and read packets as soon as they
+arrive. By default ffmpeg only do this if multiple inputs are specified.
 
 @item -sdp_file @var{file} (@emph{global})
 Print sdp information for an output stream to @var{file}.
@@ -1736,6 +1745,16 @@ this buffer, in packets, for the matching output stream.
 
 The default value of this option should be high enough for most uses, so only
 touch this option if you are sure that you need it.
+
+@item -auto_conversion_filters (@emph{global})
+Enable automatically inserting format conversion filters in all filter
+graphs, including those defined by @option{-vf}, @option{-af},
+@option{-filter_complex} and @option{-lavfi}. If filter format negotiation
+requires a conversion, the initialization of the filters will fail.
+Conversions can still be performed by inserting the relevant conversion
+filter (scale, aresample) in the graph.
+On by default, to explicitly disable it you need to specify
+@code{-noauto_conversion_filters}.
 
 @end table
 
@@ -2031,6 +2050,7 @@ ffmpeg -i src.ext -lmax 21*QP2LAMBDA dst.ext
 @ifset config-avfilter
 @include filters.texi
 @end ifset
+@include general_contents.texi
 @end ifset
 
 @chapter See Also

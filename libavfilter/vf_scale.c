@@ -358,7 +358,7 @@ static int query_formats(AVFilterContext *ctx)
                 return ret;
             }
         }
-        if ((ret = ff_formats_ref(formats, &ctx->inputs[0]->out_formats)) < 0)
+        if ((ret = ff_formats_ref(formats, &ctx->inputs[0]->outcfg.formats)) < 0)
             return ret;
     }
     if (ctx->outputs[0]) {
@@ -372,7 +372,7 @@ static int query_formats(AVFilterContext *ctx)
                 return ret;
             }
         }
-        if ((ret = ff_formats_ref(formats, &ctx->outputs[0]->in_formats)) < 0)
+        if ((ret = ff_formats_ref(formats, &ctx->outputs[0]->incfg.formats)) < 0)
             return ret;
     }
 
@@ -646,8 +646,6 @@ static int scale_slice(AVFilterLink *link, AVFrame *out_buf, AVFrame *cur_pic, s
     return sws_scale(sws, in, in_stride, y/mul, h,
                          out,out_stride);
 }
-
-#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts) * av_q2d(tb))
 
 static int scale_frame(AVFilterLink *link, AVFrame *in, AVFrame **frame_out)
 {
