@@ -117,7 +117,7 @@ const static AVOption vpe_enc_vp9_options[] = {
       FLAGS },
 
     /* Detail parameters is described in
-      https://github.com/VeriSilicon/vpe#VP9-Encoder */
+      https://github.com/VeriSilicon/ffmpeg#VP9-Encoder*/
     { "enc_params",
       "Override the VP9 encoder configuration",
       OFFSET(enc_params),

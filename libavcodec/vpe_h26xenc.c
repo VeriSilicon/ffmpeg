@@ -491,7 +491,7 @@ static const AVOption vpe_h26x_encode_options[] = {
       .flags = FLAGS },
 
     /* Detail parameters is described in
-       https://github.com/VeriSilicon/vpe#H264-H265-Encoder */
+       https://github.com/VeriSilicon/ffmpeg#H264-H265-Encoder*/
     { "enc_params",
       "Override the VPE h264/hevc configuration using a :-separated list of "
       "key=value parameters.",
