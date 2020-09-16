@@ -24,6 +24,7 @@
 #include <vpe/vpi_types.h>
 
 #include "avcodec.h"
+#include "encode.h"
 #include "internal.h"
 #include "libavutil/log.h"
 #include "libavutil/hwcontext.h"
@@ -80,6 +81,9 @@ typedef struct {
     char *enc_params;
     /*Encoder flush state*/
     int flush_state;
+
+    AVFrame *frame;
+    int eof;
 } VpeEncVp9Ctx;
 
 const static AVOption vpe_enc_vp9_options[] = {
@@ -206,14 +210,14 @@ static void vpe_dump_pic(AVCodecContext *avctx, const char *str, const char *sep
     av_log(avctx, AV_LOG_TRACE, "\n");
 }
 
-static int vpe_vp9enc_receive_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
-                                  const AVFrame *input_image)
+static int vpe_vp9enc_receive_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx)
 {
     VpeEncVp9Pic *transpic = NULL;
     VpiFrame *vpi_frame    = NULL;
     VpiCtrlCmdParam cmd;
     int ret;
     int i;
+    AVFrame *frame = ctx->frame;
 
     cmd.cmd  = VPI_CMD_VP9ENC_GET_EMPTY_FRAME_SLOT;
     cmd.data = NULL;
@@ -234,19 +238,28 @@ static int vpe_vp9enc_receive_pic(AVCodecContext *avctx, VpeEncVp9Ctx *ctx,
         return AVERROR_BUFFER_TOO_SMALL;
     }
 
+    if (!frame->buf[0]) {
+        ret = ff_encode_get_frame(avctx, frame);
+        if (ret < 0 && ret != AVERROR_EOF)
+            return ret;
+    }
+    if (ret == AVERROR_EOF)
+        frame = NULL;
+
     transpic->state = 1;
-    if (input_image) {
+    if (frame) {
         if (!transpic->trans_pic) {
             transpic->trans_pic = av_frame_alloc();
             if (!transpic->trans_pic)
                 return AVERROR(ENOMEM);
         }
         av_frame_unref(transpic->trans_pic);
-        av_frame_ref(transpic->trans_pic, input_image);
+        av_frame_move_ref(transpic->trans_pic, frame);
         vpe_vp9enc_input_frame(transpic->trans_pic, vpi_frame);
     } else {
         av_log(ctx, AV_LOG_DEBUG, "input image is empty, received EOF\n");
         vpe_vp9enc_input_frame(NULL, vpi_frame);
+        ctx->eof = 1;
     }
 
     ret = ctx->vpi->encode_put_frame(ctx->ctx, (void*)vpi_frame);
@@ -391,6 +404,7 @@ static av_cold int vpe_enc_vp9_close(AVCodecContext *avctx)
         ctx->vpi->close(ctx->ctx);
     }
     vpe_enc_vp9_consume_flush(avctx);
+    av_frame_free(&ctx->frame);
     av_buffer_unref(&ctx->hw_frame);
     av_buffer_unref(&ctx->hw_device);
     if (ctx->ctx) {
@@ -425,6 +439,10 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
         hwdevice_ctx = (AVHWDeviceContext *)avctx->hw_device_ctx->data;
         vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
     }
+
+    ctx->frame = av_frame_alloc();
+    if (!ctx->frame)
+        return AVERROR(ENOMEM);
 
     avctx->pix_fmt          = AV_PIX_FMT_YUV420P;
     psetting->preset        = ctx->preset;
@@ -500,21 +518,6 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
     return 0;
 }
 
-static int vpe_enc_vp9_send_frame(AVCodecContext *avctx,
-                                  const AVFrame *input_frame)
-{
-    VpeEncVp9Ctx *ctx = (VpeEncVp9Ctx *)avctx->priv_data;
-    int ret           = 0;
-
-    /* Store input pictures */
-    ret = vpe_vp9enc_receive_pic(avctx, ctx, input_frame);
-    if (ret != 0) {
-        return ret;
-    }
-
-    return 0;
-}
-
 static int vpe_enc_vp9_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
 {
     VpeEncVp9Ctx *ctx = (VpeEncVp9Ctx *)avctx->priv_data;
@@ -526,6 +529,13 @@ static int vpe_enc_vp9_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
     ret = vpe_enc_vp9_free_frames(avctx);
     if (ret != 0) {
         return ret;
+    }
+
+    if (ctx->eof == 0) {
+        ret = vpe_vp9enc_receive_pic(avctx, ctx);
+        if (ret != 0) {
+            return ret;
+        }
     }
 
     cmd.cmd = VPI_CMD_VP9ENC_GET_FRAME_PACKET;
@@ -582,7 +592,6 @@ AVCodec ff_vp9_vpe_encoder = {
     .id             = AV_CODEC_ID_VP9,
     .priv_data_size = sizeof(VpeEncVp9Ctx),
     .init           = &vpe_enc_vp9_init,
-    .send_frame     = &vpe_enc_vp9_send_frame,
     .receive_packet = &vpe_enc_vp9_receive_packet,
     .close          = &vpe_enc_vp9_close,
     .priv_class     = &vpe_enc_vp9_class,

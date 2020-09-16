@@ -373,14 +373,14 @@ static int vpe_pp_query_formats(AVFilterContext *avf_ctx)
     AVFilterFormats *out_fmts;
 
     in_fmts = ff_make_format_list(input_pix_fmts);
-    ret = ff_formats_ref(in_fmts, &avf_ctx->inputs[0]->out_formats);
+    ret = ff_formats_ref(in_fmts, &avf_ctx->inputs[0]->outcfg.formats);
     if (ret < 0){
         av_log(NULL, AV_LOG_ERROR, "input ff_formats_ref error=%d\n", ret);
         return ret;
     }
 
     out_fmts = ff_make_format_list(output_pix_fmts);
-    ret      = ff_formats_ref(out_fmts, &avf_ctx->outputs[0]->in_formats);
+    ret      = ff_formats_ref(out_fmts, &avf_ctx->outputs[0]->incfg.formats);
     if (ret < 0){
         av_log(NULL, AV_LOG_ERROR, "output ff_formats_ref error=%d\n", ret);
         return ret;

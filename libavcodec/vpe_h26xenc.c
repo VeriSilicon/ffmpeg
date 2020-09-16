@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <vpe/vpi_api.h>
 #include <vpe/vpi_types.h>
+#include "encode.h"
 #include "internal.h"
 #include "libavutil/opt.h"
 #include "libavcodec/internal.h"
@@ -70,6 +71,9 @@ typedef struct VpeH26xEncCtx {
     char *profile; /*Set the profile of the encoding*/
     char *level; /*Set the level of the encoding*/
     char *enc_params; /*The encoding parameters*/
+
+    AVFrame *frame;
+    int eof;
 } VpeH26xEncCtx;
 
 static int vpe_h26x_encode_create_param_list(AVCodecContext *avctx,
@@ -155,6 +159,10 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     }
 
     memset(&enc_ctx->h26x_enc_cfg, 0, sizeof(VpiH26xEncCfg));
+
+    enc_ctx->frame = av_frame_alloc();
+    if (!enc_ctx->frame)
+        return AVERROR(ENOMEM);
 
     if (avctx->codec->id == AV_CODEC_ID_HEVC) {
         strcpy(enc_ctx->h26x_enc_cfg.module_name, "HEVCENC");
@@ -246,14 +254,14 @@ static void vpe_h26xenc_input_frame(AVFrame *input_image,
     }
 }
 
-static int vpe_h26x_encode_send_frame(AVCodecContext *avctx,
-                                      const AVFrame *input_frame)
+static int vpe_h26x_encode_receive_pic(AVCodecContext *avctx)
 {
     int i                   = 0;
     int ret                 = 0;
     VpeH26xEncFrm *transpic = NULL;
     VpeH26xEncCtx *enc_ctx  = (VpeH26xEncCtx *)avctx->priv_data;
     VpiFrame *vpi_frame     = NULL;
+    AVFrame *frame          = enc_ctx->frame;
     VpiCtrlCmdParam cmd;
 
     cmd.cmd  = VPI_CMD_H26xENC_GET_EMPTY_FRAME_SLOT;
@@ -274,19 +282,29 @@ static int vpe_h26x_encode_send_frame(AVCodecContext *avctx,
     if (i == MAX_WAIT_DEPTH) {
         return AVERROR_BUFFER_TOO_SMALL;
     }
+
+    if (!frame->buf[0]) {
+        ret = ff_encode_get_frame(avctx, frame);
+        if (ret < 0 && ret != AVERROR_EOF)
+            return ret;
+    }
+    if (ret == AVERROR_EOF)
+        frame = NULL;
+
     transpic->state = 1;
-    if (input_frame) {
+    if (frame) {
         if (!transpic->frame) {
             transpic->frame = av_frame_alloc();
             if (!transpic->frame)
                 return AVERROR(ENOMEM);
         }
         av_frame_unref(transpic->frame);
-        av_frame_ref(transpic->frame, input_frame);
+        av_frame_move_ref(transpic->frame, frame);
         vpe_h26xenc_input_frame(transpic->frame, vpi_frame);
     } else {
         av_log(enc_ctx, AV_LOG_DEBUG, "input image is empty, received EOF\n");
         vpe_h26xenc_input_frame(NULL, vpi_frame);
+        enc_ctx->eof = 1;
     }
 
     ret = enc_ctx->api->encode_put_frame(enc_ctx->ctx, (void*)vpi_frame);
@@ -372,6 +390,13 @@ static int vpe_h26x_encode_receive_packet(AVCodecContext *avctx,
         return ret;
     }
 
+    if (ctx->eof == 0) {
+        ret = vpe_h26x_encode_receive_pic(avctx);
+        if (ret != 0) {
+            return ret;
+        }
+    }
+
     cmd.cmd = VPI_CMD_H26xENC_GET_FRAME_PACKET;
     ret = ctx->api->control(ctx->ctx, &cmd, (void *)&stream_size);
     if (ret == -1) {
@@ -439,6 +464,7 @@ static av_cold int vpe_h26x_encode_close(AVCodecContext *avctx)
         enc_ctx->api->close(enc_ctx->ctx);
     }
     vpe_h26x_enc_consume_flush(avctx);
+    av_frame_free(&enc_ctx->frame);
     av_buffer_unref(&enc_ctx->hwframe);
     if (enc_ctx->ctx) {
         ret = vpi_destroy(enc_ctx->ctx, vpedev_ctx->device);
@@ -545,7 +571,6 @@ AVCodec ff_h264_vpe_encoder = {
     .priv_data_size = sizeof(VpeH26xEncCtx),
     .init           = &vpe_h26x_encode_init,
     .close          = &vpe_h26x_encode_close,
-    .send_frame     = &vpe_h26x_encode_send_frame,
     .receive_packet = &vpe_h26x_encode_receive_packet,
     .priv_class     = &vpe_encode_h264_class,
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE,
@@ -566,7 +591,6 @@ AVCodec ff_hevc_vpe_encoder = {
     .priv_data_size = sizeof(VpeH26xEncCtx),
     .init           = &vpe_h26x_encode_init,
     .close          = &vpe_h26x_encode_close,
-    .send_frame     = &vpe_h26x_encode_send_frame,
     .receive_packet = &vpe_h26x_encode_receive_packet,
     .priv_class     = &vpe_encode_hevc_class,
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE,
