@@ -84,10 +84,9 @@ ffmpeg -init_hw_device vpe=dev0:/dev/transcoder0,priority=live,vpeloglevel=0
 ## Decoder
 |   Option        | Sub Option | Type   | Description    | Range | Default Value    |
 |---------------|------------|--------|-----------------------------------------------------------------------------|----------------------|------------------|
-| -low_res    |            | string | Set output streams number and set the downscaling size for each stream.                        |                      | null             |
+| -low_res    |            | string | Set output streams number and set the downscaling size for each stream.<br><br>1. The suppported minimal window for H264/HEVC is [128, 98], for VP9 is [66, 66] <br><br>2. The target windows width and height should always equal or less than source video width and heigh           | H264/HEVC: W>=128 H>=98<br><br>VP9: <br>W>=66 H>=66             |
 | -dev         |            | string | Set device name      |                      | /dev/transcoder0 |
 | -transcode |            | int | Whether need doing transcoding, for decoder and encoder only case, this opition is not required.| 0,1        |0            |
-
 
 Example：
 Below example will do hevc->h264 transcoding and output two streams: one is orignal resolution h264 stream, the second one is 640x360 h264 stream.
@@ -95,9 +94,9 @@ Below example will do hevc->h264 transcoding and output two streams: one is orig
 ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 -c:v hevc_vpe -transcode 1 -low_res "2:(640x360)" -i ${INPUT_FILE_H264} -filter_complex 'spliter_vpe=outputs=2[out0][out1]' -map '[out0]' -c:v h264enc_vpe out0.h264 -map '[out1]' -c:v h264enc_vpe out1.h264
 ```
 
-**"low_res" more detail:**
+#### "low_res" formats
 
-"low_res" opition for decoder supports multiple formats, supporse orignal stream resolution is W x H:
+for decoder supports multiple formats, supporse orignal stream resolution is W x H:
 
 1. Fixed resolution. Below example will output 4 streams: [W x H], [1920x1080], [1280x720], [640x360]:
     > low_res=4:(1920x1080)(1280x720)(640x360)
@@ -142,7 +141,6 @@ Note: low_res is also for vpe_pp filter, the only difference is only the streams
 | \-passes     | passes          | int    | Number of passes\.                    | \[1\.\.2\]                           | 1              |
 | \-profile:v                               |                 | int    | Encoder profile                       | \[0\.\.3\]                           | 0              |
 | \-preset           |                 | string | Encoding preset\.                                                                                        | superfast<br>fast<br>medium<br>slow<br>superslow                                                                                                                                                 | none                       |
-
 Example:
 > -enc_params "ref_frame_scheme=4:lag_in_frames=18:passes=2:bitrate_window=60:effort=0:intra_pic_rate=60"
 
