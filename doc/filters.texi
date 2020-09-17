@@ -1573,6 +1573,14 @@ Enabling it will normalize magnitude response at DC to 0dB.
 
 @item order, o
 Set the filter order, can be 1 or 2. Default is 2.
+
+@item transform, a
+Set transform type of IIR filter.
+@table @option
+@item di
+@item dii
+@item tdii
+@end table
 @end table
 
 @subsection Commands
@@ -2693,6 +2701,14 @@ Specify which channels to filter, by default all available are filtered.
 @item normalize, n
 Normalize biquad coefficients, by default is disabled.
 Enabling it will normalize magnitude response at DC to 0dB.
+
+@item transform, a
+Set transform type of IIR filter.
+@table @option
+@item di
+@item dii
+@item tdii
+@end table
 @end table
 
 @subsection Commands
@@ -2756,6 +2772,14 @@ Specify which channels to filter, by default all available are filtered.
 @item normalize, n
 Normalize biquad coefficients, by default is disabled.
 Enabling it will normalize magnitude response at DC to 0dB.
+
+@item transform, a
+Set transform type of IIR filter.
+@table @option
+@item di
+@item dii
+@item tdii
+@end table
 @end table
 
 @subsection Commands
@@ -2826,6 +2850,14 @@ Specify which channels to filter, by default all available are filtered.
 @item normalize, n
 Normalize biquad coefficients, by default is disabled.
 Enabling it will normalize magnitude response at DC to 0dB.
+
+@item transform, a
+Set transform type of IIR filter.
+@table @option
+@item di
+@item dii
+@item tdii
+@end table
 @end table
 
 @subsection Commands
@@ -2884,6 +2916,14 @@ Specify which channels to filter, by default all available are filtered.
 @item normalize, n
 Normalize biquad coefficients, by default is disabled.
 Enabling it will normalize magnitude response at DC to 0dB.
+
+@item transform, a
+Set transform type of IIR filter.
+@table @option
+@item di
+@item dii
+@item tdii
+@end table
 @end table
 
 @section bs2b
@@ -3607,6 +3647,14 @@ Specify which channels to filter, by default all available are filtered.
 @item normalize, n
 Normalize biquad coefficients, by default is disabled.
 Enabling it will normalize magnitude response at DC to 0dB.
+
+@item transform, a
+Set transform type of IIR filter.
+@table @option
+@item di
+@item dii
+@item tdii
+@end table
 @end table
 
 @subsection Examples
@@ -4084,6 +4132,14 @@ Specify which channels to filter, by default all available are filtered.
 @item normalize, n
 Normalize biquad coefficients, by default is disabled.
 Enabling it will normalize magnitude response at DC to 0dB.
+
+@item transform, a
+Set transform type of IIR filter.
+@table @option
+@item di
+@item dii
+@item tdii
+@end table
 @end table
 
 @subsection Commands
@@ -4197,6 +4253,9 @@ If not specified, or the expressed duration is negative, the audio is
 supposed to be generated forever.
 Only used if plugin have zero inputs.
 
+@item latency, l
+Enable latency compensation, by default is disabled.
+Only used if plugin have inputs.
 @end table
 
 @subsection Examples
@@ -4407,6 +4466,14 @@ Specify which channels to filter, by default all available are filtered.
 @item normalize, n
 Normalize biquad coefficients, by default is disabled.
 Enabling it will normalize magnitude response at DC to 0dB.
+
+@item transform, a
+Set transform type of IIR filter.
+@table @option
+@item di
+@item dii
+@item tdii
+@end table
 @end table
 
 @subsection Examples
@@ -5527,6 +5594,14 @@ Specify which channels to filter, by default all available are filtered.
 @item normalize, n
 Normalize biquad coefficients, by default is disabled.
 Enabling it will normalize magnitude response at DC to 0dB.
+
+@item transform, a
+Set transform type of IIR filter.
+@table @option
+@item di
+@item dii
+@item tdii
+@end table
 @end table
 
 @subsection Commands
@@ -5795,7 +5870,7 @@ Below is a description of the currently available audio sources.
 Buffer audio frames, and make them available to the filter chain.
 
 This source is mainly intended for a programmatic use, in particular
-through the interface defined in @file{libavfilter/asrc_abuffer.h}.
+through the interface defined in @file{libavfilter/buffersrc.h}.
 
 It accepts the following parameters:
 @table @option
@@ -6001,6 +6076,13 @@ Specifies the sample rate, and defaults to 44100.
 @item nb_samples, n
 Set the number of samples per requested frames.
 
+@item duration, d
+Set the duration of the sourced audio. See
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
+
+If not specified, or the expressed duration is negative, the audio is
+supposed to be generated forever.
 @end table
 
 @subsection Examples
@@ -6395,12 +6477,6 @@ and a separate video created with @var{alphaextract}, you might use:
 movie=in_alpha.mkv [alpha]; [in][alpha] alphamerge [out]
 @end example
 
-Since this filter is designed for reconstruction, it operates on frame
-sequences without considering timestamps, and terminates when either
-input reaches end of stream. This will cause problems if your encoding
-pipeline drops frames. If you're trying to apply an image as an
-overlay to a video stream, consider the @var{overlay} filter instead.
-
 @section amplify
 
 Amplify differences between current pixel and pixels of adjacent frames in
@@ -6578,7 +6654,7 @@ The filter accepts the following options:
 @table @option
 @item sigmaS
 Set sigma of gaussian function to calculate spatial weight.
-Allowed range is 0 to 10. Default is 0.1.
+Allowed range is 0 to 512. Default is 0.1.
 
 @item sigmaR
 Set sigma of gaussian function to calculate range weight.
@@ -7179,6 +7255,42 @@ Overlay a greenscreen-video on top of a static black background.
 ffmpeg -f lavfi -i color=c=black:s=1280x720 -i video.mp4 -shortest -filter_complex "[1:v]chromakey=0x70de77:0.1:0.2[ckout];[0:v][ckout]overlay[out]" -map "[out]" output.mkv
 @end example
 @end itemize
+
+@section chromanr
+Reduce chrominance noise.
+
+The filter accepts the following options:
+
+@table @option
+@item thres
+Set threshold for averaging chrominance values.
+Sum of absolute difference of U and V pixel components or current
+pixel and neighbour pixels lower than this threshold will be used in
+averaging. Luma component is left unchanged and is copied to output.
+Default value is 30. Allowed range is from 1 to 200.
+
+@item sizew
+Set horizontal radius of rectangle used for averaging.
+Allowed range is from 1 to 100. Default value is 5.
+
+@item sizeh
+Set vertical radius of rectangle used for averaging.
+Allowed range is from 1 to 100. Default value is 5.
+
+@item stepw
+Set horizontal step when averaging. Default value is 1.
+Allowed range is from 1 to 50.
+Mostly useful to speed-up filtering.
+
+@item steph
+Set vertical step when averaging. Default value is 1.
+Allowed range is from 1 to 50.
+Mostly useful to speed-up filtering.
+@end table
+
+@subsection Commands
+This filter supports same @ref{commands} as options.
+The command accepts the same syntax of the corresponding option.
 
 @section chromashift
 Shift chroma pixels horizontally and/or vertically.
@@ -9288,13 +9400,21 @@ TensorFlow backend. To enable this backend you
 need to install the TensorFlow for C library (see
 @url{https://www.tensorflow.org/install/install_c}) and configure FFmpeg with
 @code{--enable-libtensorflow}
+
+@item openvino
+OpenVINO backend. To enable this backend you
+need to build and install the OpenVINO for C library (see
+@url{https://github.com/openvinotoolkit/openvino/blob/master/build-instruction.md}) and configure FFmpeg with
+@code{--enable-libopenvino} (--extra-cflags=-I... --extra-ldflags=-L... might
+be needed if the header files and libraries are not installed into system path)
+
 @end table
 
 Default value is @samp{native}.
 
 @item model
 Set path to model file specifying network architecture and its parameters.
-Note that different backends use different file formats. TensorFlow and native
+Note that different backends use different file formats. TensorFlow, OpenVINO and native
 backend can load files for only its format.
 
 Native model file (.model) can be generated from TensorFlow model file (.pb) by using tools/python/convert.py
@@ -10112,6 +10232,12 @@ drawtext="fontfile=FreeSerif.ttf:fontcolor=white:x=100:y=x/dar:enable=lt(mod(t\,
 Use fontconfig to set the font. Note that the colons need to be escaped.
 @example
 drawtext='fontfile=Linux Libertine O-40\:style=Semibold:text=FFmpeg'
+@end example
+
+@item
+Draw "Test Text" with font size dependent on height of the video.
+@example
+drawtext="text='Test Text': fontsize=h/30: x=(w-text_w)/2: y=(h-text_h*2)"
 @end example
 
 @item
@@ -11817,6 +11943,9 @@ Display video size or number of audio channels in case of audio used by filter l
 
 @item rate
 Display video frame rate or sample rate in case of audio used by filter link.
+
+@item eof
+Display link output status.
 @end table
 
 @item rate, r
@@ -12809,7 +12938,7 @@ The obtained VMAF score is printed through the logging system.
 
 It requires Netflix's vmaf library (libvmaf) as a pre-requisite.
 After installing the library it can be enabled using:
-@code{./configure --enable-libvmaf --enable-version3}.
+@code{./configure --enable-libvmaf}.
 If no model path is specified it uses the default model: @code{vmaf_v0.6.1.pkl}.
 
 The filter has following options:
@@ -12823,7 +12952,7 @@ Default value: @code{"/usr/local/share/model/vmaf_v0.6.1.pkl"}
 Set the file path to be used to store logs.
 
 @item log_fmt
-Set the format of the log file (xml or json).
+Set the format of the log file (csv, json or xml).
 
 @item enable_transform
 This option can enable/disable the @code{score_transform} applied to the final predicted VMAF score,
@@ -14342,8 +14471,14 @@ It accepts the following values:
 @item yuv420
 force YUV420 output
 
+@item yuv420p10
+force YUV420p10 output
+
 @item yuv422
 force YUV422 output
+
+@item yuv422p10
+force YUV422p10 output
 
 @item yuv444
 force YUV444 output
@@ -17971,7 +18106,7 @@ subtitles=video.mkv:si=1
 To make the subtitles stream from @file{sub.srt} appear in 80% transparent blue
 @code{DejaVu Serif}, use:
 @example
-subtitles=sub.srt:force_style='FontName=DejaVu Serif,PrimaryColour=&HCCFF0000'
+subtitles=sub.srt:force_style='Fontname=DejaVu Serif,PrimaryColour=&HCCFF0000'
 @end example
 
 @section super2xsai
@@ -19313,6 +19448,46 @@ Truncated square pyramid projection.
 @item he
 @item hequirect
 Half equirectangular projection.
+
+@item equisolid
+Equisolid format.
+
+Format specific options:
+@table @option
+@item h_fov
+@item v_fov
+@item d_fov
+Set output horizontal/vertical/diagonal field of view. Values in degrees.
+
+If diagonal field of view is set it overrides horizontal and vertical field of view.
+
+@item ih_fov
+@item iv_fov
+@item id_fov
+Set input horizontal/vertical/diagonal field of view. Values in degrees.
+
+If diagonal field of view is set it overrides horizontal and vertical field of view.
+@end table
+
+@item og
+Orthographic format.
+
+Format specific options:
+@table @option
+@item h_fov
+@item v_fov
+@item d_fov
+Set output horizontal/vertical/diagonal field of view. Values in degrees.
+
+If diagonal field of view is set it overrides horizontal and vertical field of view.
+
+@item ih_fov
+@item iv_fov
+@item id_fov
+Set input horizontal/vertical/diagonal field of view. Values in degrees.
+
+If diagonal field of view is set it overrides horizontal and vertical field of view.
+@end table
 @end table
 
 @item interp
@@ -20354,6 +20529,12 @@ Set one of available transition effects:
 @item hrslice
 @item vuslice
 @item vdslice
+@item hblur
+@item fadegrays
+@item wipetl
+@item wipetr
+@item wipebl
+@item wipebr
 @end table
 Default transition effect is fade.
 
@@ -20733,6 +20914,12 @@ Input frame count.
 @item on
 Output frame count.
 
+@item in_time, it
+The input timestamp expressed in seconds. It's NAN if the input timestamp is unknown.
+
+@item out_time, time, ot
+The output timestamp expressed in seconds.
+
 @item x
 @item y
 Last calculated 'x' and 'y' position from 'x' and 'y' expression
@@ -20771,13 +20958,13 @@ display aspect ratio
 
 @itemize
 @item
-Zoom-in up to 1.5 and pan at same time to some spot near center of picture:
+Zoom in up to 1.5x and pan at same time to some spot near center of picture:
 @example
 zoompan=z='min(zoom+0.0015,1.5)':d=700:x='if(gte(zoom,1.5),x,x+1/a)':y='if(gte(zoom,1.5),y,y+1)':s=640x360
 @end example
 
 @item
-Zoom-in up to 1.5 and pan always at center of picture:
+Zoom in up to 1.5x and pan always at center of picture:
 @example
 zoompan=z='min(zoom+0.0015,1.5)':d=700:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'
 @end example
@@ -20787,6 +20974,13 @@ Same as above but without pausing:
 @example
 zoompan=z='min(max(zoom,pzoom)+0.0015,1.5)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'
 @end example
+
+@item
+Zoom in 2x into center of picture only for the first second of the input video:
+@example
+zoompan=z='if(between(in_time,0,1),2,1)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'
+@end example
+
 @end itemize
 
 @anchor{zscale}
@@ -22125,7 +22319,7 @@ Below is a description of the currently available video sources.
 Buffer video frames, and make them available to the filter chain.
 
 This source is mainly intended for a programmatic use, in particular
-through the interface defined in @file{libavfilter/vsrc_buffer.h}.
+through the interface defined in @file{libavfilter/buffersrc.h}.
 
 It accepts the following parameters:
 
@@ -22385,6 +22579,17 @@ Set number of colors to use at once. Allowed range is from 2 to 8. Default value
 
 @item seed
 Set seed for picking gradient line points.
+
+@item duration, d
+Set the duration of the sourced video. See
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
+
+If not specified, or the expressed duration is negative, the video is
+supposed to be generated forever.
+
+@item speed
+Set speed of gradients rotation.
 @end table
 
 
@@ -22773,6 +22978,10 @@ for the accepted syntax.
 
 If not specified, or the expressed duration is negative, the video is
 supposed to be generated forever.
+
+Since the frame rate is used as time base, all frames including the last one
+will have their full duration. If the specified duration is not a multiple
+of the frame duration, it will be rounded up.
 
 @item sar
 Set the sample aspect ratio of the sourced video.
@@ -25377,6 +25586,20 @@ Draw every sample directly.
 @end table
 
 Default value is @code{scale}.
+
+@item filter
+Set the filter mode.
+
+Available values are:
+@table @samp
+@item average
+Use average samples values for each drawn sample.
+
+@item peak
+Use peak samples values for each drawn sample.
+@end table
+
+Default value is @code{average}.
 @end table
 
 @subsection Examples

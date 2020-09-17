@@ -2,6 +2,29 @@ Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
 version <next>:
+- AudioToolbox output device
+- MacCaption demuxer
+- PGX decoder
+- chromanr video filter
+- VDPAU accelerated HEVC 10/12bit decoding
+- ADPCM IMA Ubisoft APM encoder
+- Rayman 2 APM muxer
+- AV1 encoding support SVT-AV1
+- Cineform HD encoder
+- ADPCM Argonaut Games encoder
+- Argonaut Games ASF muxer
+- AV1 Low overhead bitstream format demuxer
+- RPZA video encoder
+- ADPCM IMA MOFLEX decoder
+- MobiClip FastAudio decoder
+- MobiClip video decoder
+- MOFLEX demuxer
+- MODS demuxer
+- PhotoCD decoder
+- MCA demuxer
+- AV1 decoder (Hardware acceleration used only)
+- SVS demuxer
+- Argonaut Games BRP demuxer
 
 
 version 4.3:

@@ -172,6 +172,7 @@ extern AVFilter ff_vf_bwdif;
 extern AVFilter ff_vf_cas;
 extern AVFilter ff_vf_chromahold;
 extern AVFilter ff_vf_chromakey;
+extern AVFilter ff_vf_chromanr;
 extern AVFilter ff_vf_chromashift;
 extern AVFilter ff_vf_ciescope;
 extern AVFilter ff_vf_codecview;
@@ -530,7 +531,7 @@ const AVFilter *avfilter_get_by_name(const char *name)
 
     while ((f = av_filter_iterate(&opaque)))
         if (!strcmp(f->name, name))
-            return (AVFilter *)f;
+            return f;
 
     return NULL;
 }

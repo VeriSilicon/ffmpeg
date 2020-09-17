@@ -528,6 +528,7 @@ static void ffmpeg_cleanup(int ret)
         for (j = 0; j < fg->nb_outputs; j++) {
             OutputFilter *ofilter = fg->outputs[j];
 
+            avfilter_inout_free(&ofilter->out_tmp);
             av_freep(&ofilter->name);
             av_freep(&ofilter->formats);
             av_freep(&ofilter->channel_layouts);
@@ -4051,7 +4052,9 @@ static int init_input_thread(int i)
     int ret;
     InputFile *f = input_files[i];
 
-    if (nb_input_files == 1)
+    if (f->thread_queue_size < 0)
+        f->thread_queue_size = (nb_input_files > 1 ? 8 : 0);
+    if (!f->thread_queue_size)
         return 0;
 
     if (f->ctx->pb ? !f->ctx->pb->seekable :
@@ -4105,7 +4108,7 @@ static int get_input_packet(InputFile *f, AVPacket *pkt)
     }
 
 #if HAVE_THREADS
-    if (nb_input_files > 1)
+    if (f->thread_queue_size)
         return get_input_packet_mt(f, pkt);
 #endif
     return av_read_frame(f->ctx, pkt);

@@ -510,20 +510,22 @@ static MpegTSFilter *mpegts_open_section_filter(MpegTSContext *ts,
 {
     MpegTSFilter *filter;
     MpegTSSectionFilter *sec;
+    uint8_t *section_buf = av_mallocz(MAX_SECTION_SIZE);
 
-    if (!(filter = mpegts_open_filter(ts, pid, MPEGTS_SECTION)))
+    if (!section_buf)
         return NULL;
+
+    if (!(filter = mpegts_open_filter(ts, pid, MPEGTS_SECTION))) {
+        av_free(section_buf);
+        return NULL;
+    }
     sec = &filter->u.section_filter;
     sec->section_cb  = section_cb;
     sec->opaque      = opaque;
-    sec->section_buf = av_mallocz(MAX_SECTION_SIZE);
+    sec->section_buf = section_buf;
     sec->check_crc   = check_crc;
     sec->last_ver    = -1;
 
-    if (!sec->section_buf) {
-        av_free(filter);
-        return NULL;
-    }
     return filter;
 }
 
@@ -1341,7 +1343,8 @@ skip:
                         }
                     }
 
-                    if (!pcr_found) {
+                    if (pes->st->codecpar->codec_id == AV_CODEC_ID_DVB_TELETEXT &&
+                        !pcr_found) {
                         av_log(pes->stream, AV_LOG_VERBOSE,
                                "Forcing DTS/PTS to be unset for a "
                                "non-trustworthy PES packet for PID %d as "

@@ -158,7 +158,7 @@ OBJS-$(CONFIG_ANULLSINK_FILTER)              += asink_anullsink.o
 # video filters
 OBJS-$(CONFIG_ADDROI_FILTER)                 += vf_addroi.o
 OBJS-$(CONFIG_ALPHAEXTRACT_FILTER)           += vf_extractplanes.o
-OBJS-$(CONFIG_ALPHAMERGE_FILTER)             += vf_alphamerge.o
+OBJS-$(CONFIG_ALPHAMERGE_FILTER)             += vf_alphamerge.o framesync.o
 OBJS-$(CONFIG_AMPLIFY_FILTER)                += vf_amplify.o
 OBJS-$(CONFIG_ASS_FILTER)                    += vf_subtitles.o
 OBJS-$(CONFIG_ATADENOISE_FILTER)             += vf_atadenoise.o
@@ -182,6 +182,7 @@ OBJS-$(CONFIG_CAS_FILTER)                    += vf_cas.o
 OBJS-$(CONFIG_CHROMABER_VULKAN_FILTER)       += vf_chromaber_vulkan.o vulkan.o
 OBJS-$(CONFIG_CHROMAHOLD_FILTER)             += vf_chromakey.o
 OBJS-$(CONFIG_CHROMAKEY_FILTER)              += vf_chromakey.o
+OBJS-$(CONFIG_CHROMANR_FILTER)               += vf_chromanr.o
 OBJS-$(CONFIG_CHROMASHIFT_FILTER)            += vf_chromashift.o
 OBJS-$(CONFIG_CIESCOPE_FILTER)               += vf_ciescope.o
 OBJS-$(CONFIG_CODECVIEW_FILTER)              += vf_codecview.o

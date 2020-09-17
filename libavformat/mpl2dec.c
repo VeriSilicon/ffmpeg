@@ -83,7 +83,6 @@ static int mpl2_read_header(AVFormatContext *s)
 {
     MPL2Context *mpl2 = s->priv_data;
     AVStream *st = avformat_new_stream(s, NULL);
-    int res = 0;
 
     if (!st)
         return AVERROR(ENOMEM);
@@ -111,8 +110,10 @@ static int mpl2_read_header(AVFormatContext *s)
             AVPacket *sub;
 
             sub = ff_subtitles_queue_insert(&mpl2->q, p, strlen(p), 0);
-            if (!sub)
+            if (!sub) {
+                ff_subtitles_queue_clean(&mpl2->q);
                 return AVERROR(ENOMEM);
+            }
             sub->pos = pos;
             sub->pts = pts_start;
             sub->duration = duration;
@@ -120,7 +121,7 @@ static int mpl2_read_header(AVFormatContext *s)
     }
 
     ff_subtitles_queue_finalize(s, &mpl2->q);
-    return res;
+    return 0;
 }
 
 static int mpl2_read_packet(AVFormatContext *s, AVPacket *pkt)
