@@ -61,6 +61,7 @@ static const enum AVPixelFormat supported_sw_formats[] = {
     AV_PIX_FMT_RGBA,
     AV_PIX_FMT_ABGR,
     AV_PIX_FMT_BGRA,
+    AV_PIX_FMT_UYVY422,
 };
 
 static const enum AVPixelFormat supported_hw_formats[] = {

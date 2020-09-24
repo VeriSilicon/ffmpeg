@@ -138,6 +138,8 @@ static int vpe_upload_config_input(AVFilterLink *inlink)
         s->cfg->format = VPI_FMT_YUV420P;
     else if (inlink->format == AV_PIX_FMT_P010LE)
         s->cfg->format = VPI_FMT_P010LE;
+    else if(inlink->format == AV_PIX_FMT_UYVY422)
+        s->cfg->format = VPI_FMT_UYVY;
     else
         s->cfg->format = VPI_FMT_OTHERS;
 
@@ -157,6 +159,7 @@ static int vpe_upload_query_formats(AVFilterContext *ctx)
     static const enum AVPixelFormat input_pix_fmts[] = {
         AV_PIX_FMT_NV12,
         AV_PIX_FMT_P010LE,
+        AV_PIX_FMT_UYVY422,
         AV_PIX_FMT_NONE
     };
     static const enum AVPixelFormat output_pix_fmts[] = {
