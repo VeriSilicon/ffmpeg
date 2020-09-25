@@ -35,9 +35,9 @@ This project is VeriSilicon VPE plugin development trunk, it keep synced with FF
 | h264\_vpe     | decoder | VeriSilicon H264 hardware decoder interface                                                                   | Maximum 4K 60Hz, High 10 Profile, levels 1 \- 5\.2 |
 | hevc\_vpe     | decoder | VeriSilicon HEVC hardware decoder interface                                                                   | Maximum 4K 60Hz, Main 10 Profile, levels 5\.1      |
 | vp9\_vpe      | decoder | VeriSilicon VP9 hardware decoder interface                                                                    | Maximum 4K 60Hz Profile 2 \(10\-bit\)              |
-| vpe\_pp       | filter  | VeriSilicon Post Processing Filter                                                                            | Downscaling videos minimal to 180                  |
+| vpe\_pp       | filter  | VeriSilicon Post Processing Filter                                                                            | Upload raw data to hardware encoders, and doing the video downscaling. <br>Suppported raw data format:<br> YUV420P <br> YUV422P<br> NV12<br> NV21<br> YUV420P10LE<br>YUV420P10BE<br>YUV422P10LE<br>YUV422P10BE<br>P010LE<br>P010BE<br>YUV444P<br>RGB24<br>BGR24<br>ARGB<br>RGBA<br>ABGR<br>BGRA<br>            |
 | spliter\_vpe  | filter  | VeriSilicon Spliter                                                                                           | Spliter input video to Maximum 4 paths             |
-| hwupload\_vpe | filter  | VeriSilicon Hardware Uploader                                                                                 | Upload raw data to encoders                        |
+| hwupload\_vpe | filter  | VeriSilicon Hardware Uploader  for UYVY422                                                                                | Upload raw data to hardware encoders. <br>Suppported raw data format:<br> UYVY422                        |
 
 ## Install VPE driver
 1. Install VPE supported hardware like Solios-X to your computer;
