@@ -274,6 +274,7 @@ static void vpe_h26xenc_input_frame(AVFrame *input_image,
         out_frame->data[1]     = in_vpi_frame->data[1];
         out_frame->data[2]     = in_vpi_frame->data[2];
         out_frame->opaque      = (void *)input_image;
+        out_frame->vpi_opaque  = (void *)in_vpi_frame;
     } else {
         memset(out_frame, 0, sizeof(VpiFrame));
     }
@@ -361,7 +362,6 @@ static int vpe_h26xenc_consume_pic(AVCodecContext *avctx,
 
 find_pic:
     transpic->state = 0;
-
     av_frame_unref(transpic->frame);
     transpic->frame = NULL;
     return 0;
@@ -427,6 +427,7 @@ static int vpe_h26x_encode_receive_packet(AVCodecContext *avctx,
     if (ret == -1) {
         return AVERROR(EAGAIN);
     } else if (ret == 1) {
+        av_log(NULL, AV_LOG_DEBUG, "received EOF from enc\n");
         return AVERROR_EOF;
     }
 
@@ -447,7 +448,6 @@ static int vpe_h26x_encode_receive_packet(AVCodecContext *avctx,
     }
 
     return ret;
-
 }
 
 static av_cold void vpe_h26x_enc_consume_flush(AVCodecContext *avctx)
@@ -488,7 +488,6 @@ static av_cold int vpe_h26x_encode_close(AVCodecContext *avctx)
     }
 
     vpe_h26x_encode_release_param_list(avctx);
-
     if (enc_ctx->ctx) {
         enc_ctx->api->close(enc_ctx->ctx);
     }

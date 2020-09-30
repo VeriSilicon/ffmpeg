@@ -35,6 +35,7 @@
 typedef struct SpliterVpeContext {
     const AVClass *class;
     int nb_outputs;
+    int valid_outputs;
     struct {
         int enabled;
         int out_index;
@@ -84,6 +85,7 @@ static av_cold int spliter_vpe_init(AVFilterContext *ctx)
     for (i = 0; i < PIC_INDEX_MAX_NUMBER; i++) {
         s->pic_info[i].out_index = -1;
     }
+    s->valid_outputs = 0;
 
     return 0;
 }
@@ -104,6 +106,8 @@ static int spliter_vpe_config_props(AVFilterLink *inlink)
     VpiFrame *frame_hwctx;
     AVFilterContext *dst = inlink->dst;
     SpliterVpeContext *s = dst->priv;
+    AVFilterLink *outlink;
+    AVFilterContext *dst_output;
     int i;
 
     hwframe_ctx = (AVHWFramesContext *)inlink->hw_frames_ctx->data;
@@ -121,6 +125,18 @@ static int spliter_vpe_config_props(AVFilterLink *inlink)
     s->pic_info[0].crop.y       = frame_hwctx->pic_info[0].crop.y;
     s->pic_info[0].crop.w       = frame_hwctx->pic_info[0].crop.w;
     s->pic_info[0].crop.h       = frame_hwctx->pic_info[0].crop.h;
+
+    for (i = 0; i < s->nb_outputs; i++) {
+        outlink = dst->outputs[i];
+        if (outlink) {
+            dst_output = outlink->dst;
+            av_log(NULL, AV_LOG_INFO, "dst name %s\n", dst_output->name);
+            if (strstr(dst_output->name, "format") ||
+                strstr(dst_output->name, "hwdownload")) {
+                s->valid_outputs++;
+            }
+        }
+    }
 
     return 0;
 }
@@ -197,8 +213,8 @@ static int spliter_vpe_filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
-    AVFilterContext *ctx   = inlink->dst;
-    SpliterVpeContext *s   = ctx->priv;
+    AVFilterContext *ctx = inlink->dst;
+    SpliterVpeContext *s = ctx->priv;
     int i, j, pp_index, ret = AVERROR_UNKNOWN;
     VpiPicInfo *pic_info;
     VpiFrame *vpi_frame;
@@ -270,7 +286,7 @@ static int spliter_vpe_filter_frame(AVFilterLink *inlink, AVFrame *frame)
         if (!vpi_frame)
             goto err_exit;
 
-        vpi_frame->nb_outputs = s->nb_outputs;
+        vpi_frame->nb_outputs = s->valid_outputs;
         ret = ff_filter_frame(ctx->outputs[i], buf_out);
         if (ret < 0) {
             goto err_exit;

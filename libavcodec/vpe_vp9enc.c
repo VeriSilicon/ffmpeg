@@ -187,6 +187,7 @@ static void vpe_vp9enc_input_frame(AVFrame *input_image,
         out_frame->data[1]     = in_vpi_frame->data[1];
         out_frame->data[2]     = in_vpi_frame->data[2];
         out_frame->opaque      = (void *)input_image;
+        out_frame->vpi_opaque  = (void *)in_vpi_frame;
     } else {
         memset(out_frame, 0, sizeof(VpiFrame));
     }

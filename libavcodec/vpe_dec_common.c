@@ -160,8 +160,7 @@ static void vpe_clear_unused_frames(VpeDecCtx *dec_ctx)
 
     while (cur_frame) {
         if (cur_frame->used
-            && !cur_frame->vpi_frame->locked
-            && (av_buffer_get_ref_count(cur_frame->av_frame->buf[0]) == 1)) {
+            && !cur_frame->vpi_frame->locked) {
             vpe_decode_picture_consume(dec_ctx, cur_frame->vpi_frame);
             cur_frame->used = 0;
             av_frame_unref(cur_frame->av_frame);
@@ -269,7 +268,6 @@ static int vpe_output_frame(AVCodecContext *avctx, VpiFrame *vpi_frame,
     if (ret < 0)
         return ret;
 
-    dec_frame->vpi_frame->locked     = 0;
     out_frame->linesize[0]           = vpi_frame->linesize[0];
     out_frame->linesize[1]           = vpi_frame->linesize[1];
     out_frame->linesize[2]           = vpi_frame->linesize[2];
@@ -358,7 +356,7 @@ int ff_vpe_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     VpiFrame *in_vpi_frame = NULL;
     VpiCtrlCmdParam cmd_param;
     VpeDecPacket *vpe_packet;
-    int strm_buf_count;
+    int strm_buf_count, frame_buf_req;
     int ret, i;
 
     ret = vpe_release_stream_mem(dec_ctx);
@@ -425,17 +423,29 @@ int ff_vpe_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
             vpe_packet->state   = 1;
             vpe_packet->buf_ref = ref;
 
-            /* get frame buffer from pool */
-            ret = vpe_get_frame(avctx, dec_ctx, &in_vpi_frame);
-            if (ret < 0) {
-                return ret;
-            }
-
-            cmd_param.cmd = VPI_CMD_DEC_SET_FRAME_BUFFER;
-            cmd_param.data = (void *)in_vpi_frame;
-            ret = dec_ctx->vpi->control(dec_ctx->ctx, (void *)&cmd_param, NULL);
+            cmd_param.cmd  = VPI_CMD_DEC_GET_FRAME_BUFFER_REQUEST;
+            cmd_param.data = NULL;
+            ret = dec_ctx->vpi->control(dec_ctx->ctx,
+                            (void*)&cmd_param, (void *)&frame_buf_req);
             if (ret != 0) {
                 return AVERROR_EXTERNAL;
+            }
+            if (frame_buf_req) {
+                /* For field structure bitstream,
+                   didn't need to use frame buffer for every packet */
+                /* get frame buffer from pool */
+                ret = vpe_get_frame(avctx, dec_ctx, &in_vpi_frame);
+                if (ret < 0) {
+                    return ret;
+                }
+
+                cmd_param.cmd = VPI_CMD_DEC_SET_FRAME_BUFFER;
+                cmd_param.data = (void *)in_vpi_frame;
+                ret = dec_ctx->vpi->control(dec_ctx->ctx,
+                                            (void *)&cmd_param, NULL);
+                if (ret != 0) {
+                    return AVERROR_EXTERNAL;
+                }
             }
         } else if (ret == AVERROR_EOF) {
             ret = dec_ctx->vpi->decode_put_packet(dec_ctx->ctx,
