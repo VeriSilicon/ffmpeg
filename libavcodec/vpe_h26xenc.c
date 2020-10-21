@@ -128,6 +128,8 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     AVHWDeviceContext *hwdevice_ctx;
     AVVpeDeviceContext *vpedev_ctx;
     VpeH26xEncCtx *enc_ctx = (VpeH26xEncCtx *)avctx->priv_data;
+    VpiCtrlCmdParam cmd;
+    int extradata_size = 0;
 
     /*Get HW frame. The avctx->hw_frames_ctx is the reference to the
       AVHWFramesContext describing the input frame for h26x encoder*/
@@ -226,6 +228,25 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     if (ret < 0) {
         av_log(avctx, AV_LOG_ERROR, "vpe_h264x_encode_init failure\n");
         return AVERROR_EXTERNAL;
+    }
+
+    cmd.cmd = VPI_CMD_H26xENC_GET_EXTRADATA_SIZE;
+    ret = enc_ctx->api->control(enc_ctx->ctx, &cmd, (void *)&extradata_size);
+    if (ret != 0) {
+        return AVERROR_EXTERNAL;
+    }
+    if (extradata_size != 0) {
+        avctx->extradata = av_malloc(extradata_size);
+        if (avctx->extradata == NULL) {
+            return AVERROR(ENOMEM);
+        }
+        cmd.cmd  = VPI_CMD_H26xENC_GET_EXTRADATA;
+        cmd.data = (void *)avctx->extradata;
+        ret = enc_ctx->api->control(enc_ctx->ctx, &cmd, NULL);
+        if (ret != 0) {
+            return AVERROR_EXTERNAL;
+        }
+        avctx->extradata_size = extradata_size;
     }
 
     return 0;
