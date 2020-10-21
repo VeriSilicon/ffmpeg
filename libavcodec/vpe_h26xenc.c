@@ -528,7 +528,7 @@ static const AVOption vpe_h26x_encode_options[] = {
       AV_OPT_TYPE_STRING,
       { .str = NULL },
       .flags = FLAGS },
-    { "force-idr",
+    { "force_idr",
       "If forcing keyframes, force them as IDR frames.",
       OFFSETOPT(force_idr),
       AV_OPT_TYPE_INT,
