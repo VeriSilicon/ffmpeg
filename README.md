@@ -18,7 +18,9 @@
     * [Encoding Only](#Encoding-Only)
     * [Transcoding with parameters](#Transcoding-with-parameters)
     * [Downscaling First Pass](#Downscaling-First-Pass)
-* [4.Use VPE in K8s](#4.Use-VPE-in-K8S)
+
+* [5.Online Typical Use Case](#5.Online-Typical-Use-Case)
+* [5.Use VPE in K8s](#4.Use-VPE-in-K8S)
 
 # 1.Introducing
 
@@ -134,7 +136,11 @@ Note: low_res is also for vpe_pp filter, the only difference is only the streams
 | \-passes     |           | int    | Number of passes\.                    | \[1\.\.2\]                           | 1              |
 | \-profile:v                               |                 | int    | Encoder profile                       | \[0\.\.3\]                           | 0              |
 | \-preset           |                 | string | Encoding preset\.                                                                                        | superfast<br>fast<br>medium<br>slow<br>superslow                                                                                                                                                 | fast                       |
-| \-enc\_params                             | intra_pic_rate    | int    | Intra picture rate in frames\.        | \[0\.\.INT\_MAX\]                    | 0              |
+| \-enc\_params
+|                                           | effort          | int    | Encoder effort level\.                | \[0\.\.5\]<br> 0 - fastest <br>5 - best quality   | 0              |
+|                                           | lag_in_frames | int    | Number of frames to lag\. Up to 25\.  | \[0\.\.25\]                          | 7              |
+|                                           | passes          | int    | Number of passes\.                    | \[1\.\.2\]                           | 1              |
+|                                           | intra_pic_rate    | int    | Intra picture rate in frames\.        | \[0\.\.INT\_MAX\]                    | 0              |
 |                                           | bitrate_window   | int    | Bitrate window length in frames\.     | \[1\.\.300\]                         | 150            |
 |                                           | qp_hdr           | int    | Initial QP used for the first frame\. | \[\-1\.\.255\]                       | \-1            |
 |                                           | qp_min           | int    | Minimum frame header QP\.             | \[0\.\.255\]                         | 10             |
@@ -164,7 +170,8 @@ Example:
 | \-crf              |                 | int    | VCE Constant rate factor mode\. Works with lookahead turned on\.                                         | \[\-1\.\.51\]                                                                                                                                                                        | \-1                        |
 | \-force_idr              |                 | int    | If forcing keyframes, force them as IDR frames.\.                                         | \[\0\.\.1\]                                                                                                                                                                        | 0                        |
 | \-preset           |                 | string | Encoding preset\.                                                                                        | superfast<br>fast<br>medium<br>slow<br>superslow | fast|
-| \-enc_params   | intra_pic_rate    | int    | Intra picture rate in frames\.                                                                           | \[0\.\.INT\_MAX\]                                                                                                                                                                    | 0                          |
+| \-enc_params   |     |     |                                                   |
+|    | intra_pic_rate    | int    | Intra picture rate in frames\.                                                                           | \[0\.\.INT\_MAX\]                                                                                                                                                                    | 0                          |
 |                    | bitrate_window   | int    | Bitrate window length in frames\.                                                                        | \[1\.\.300\]                                                                                                                                                                         | intra_pic_rate               |
 |                    | intra_qp_delta    | int    | Intra QP delta, QP difference between target QP and intra frame QP\.                                     | \[\-51\.\.51\]                                                                                                                                                                       | \-5                        |
 |                    | qp_hdr           | int    | Initial target QP\.                                                                                      | \[\-1\.\.255\]                                                                                                                                                                       | 26                         |
@@ -181,7 +188,7 @@ Example:
 |                    | bit_var_range_P    | int    | Percent variations over average bits per frame for P frame\.                                             | \[10\.\.10000\]                                                                                                                                                                      | 10000                      |
 |                    | bit_var_range_B    | int    | Percent variations over average bits per frame for B frame\.                                             | \[10\.\.10000\]                                                                                                                                                                      | 10000                      |
 |                    | pic_rc           | int    | Picture rate control enable\.                                                                            | 0 - OFF<br>1 - ON                                                                                                                                                                          | 0                          |
-|                    | pic_rc_config           | string    | Picture rate config file. Plain text number is required. for example "10000000".                                                                              |                                                                                                                                                                          |                           |
+|                    | pic_rc_config           | string    | Picture rate config file. Plain text number is required. for example "100000".                                                                              |   10000-60000000     |   -b:v                         |
 |                    | ctb_rc           | int    | CTB QP adjustment mode for Rate Control and Subjective Quality\.                                         | \[0\.\.1\]                                                                                                                                                                           | 0                          |
 |                    | tol_ctb_rc_inter   | float  | Tolerance of Ctb Rate Control for INTER frames\.                                                         | Float point number, <br> Min = targetPicSize/<br>(1\+tolctb_rcInter\)<br>Max = targetPicSize\*<br>(1\+tolctb_rcInter\)\]; <br><br>A negative number <br>means no bit rate limit<br> in Ctb Rc                                  | 0\.0                       |
 |                    | tol_ctb_rc_intra   | float  | Tolerance of Ctb Rate Control for INTRA frames\.                                                         | Float point number                                                                                                                                                                   | \-1\.0                     |
@@ -338,7 +345,78 @@ The downscaled video will be used as the input of encoder to do second pass enco
 | ID   | Format | Format | Numbers | Encoding |                                                                                                                                                                                                                                                                                      |
 | 51   | h264   | hevc   | 1       | Y        | ffmpeg \-y \-init\_hw\_device vpe=dev0:/dev/transcoder0 \-c:v hevc\_vpe \-transcode 1 \-low\_res "1:\(d2\)" \-i $\{INPUT\_FILE\_HEVC\} \-c:v h264enc\_vpe  \-preset medium \-b:v 10000000 out0\.h264 |
 
-# 4.Use VPE in K8S
+# 4.Online Typical Use Case
+## Capture Camera and start RTP streaming:
+###### Streaming:
+```bash
+sudo ./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -i /dev/video0 -filter_hw_device "dev0" -filter_complex "hwupload_vpe" \
+-c:v h264enc_vpe -preset fast -b:v 500000 \
+-enc_params "intra_pic_rate=15" -f rtp_mpegts rtp://10.10.3.88:9999
+```
+###### Play
+```bash
+ffplay rtp://10.10.3.88:9999
+```
+## Capture RTMP straming, do transcoding, streamning to another RTMP server:
+You need to setup RTMP streaming server first
+###### Streaming:
+```bash
+./ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v h264_vpe -transcode 1 -i http://ivi.bupt.edu.cn/hls/cctv5phd.m3u8  \
+-c:v h264enc_vpe -preset medium -b:v 3000000 -level 5.1 -profile:v high -c:a copy \
+-f flv rtmp://10.10.3.88:1935/live/livestream
+```
+###### Play
+```bash
+ffplay rtmp://10.10.3.88:1935/live/livestream
+```
+
+## Downscale 4K HEVC streaming to H264 1080p, and streamning it to RTMP server:
+You need to setup RTMP streaming server first
+###### Streaming:
+```bash
+./ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1 -low_res "2:(1920x1080)" \
+-i ${INPUT_FILE_HEVC_4K}  \
+-filter_complex 'spliter_vpe=outputs=2[out0][out1]' -map '[out0]' -f null /dev/null -map '[out1]' \
+-c:v h264enc_vpe -preset fast -b:v 1000000 \
+-enc_params "intra_pic_rate=15:pic_rc=1:pic_rc_config=rc.cfg" \
+-c:a copy -f flv rtmp://10.10.3.88:1935/live/livestream
+```
+###### Play
+```bash
+ffplay rtmp://10.10.3.88:1935/live/livestream
+```
+
+## Downscale 4K HEVC streaming to 4 small stream, and streamning it to RTMP server:
+You need to setup RTMP streaming server first
+###### Streaming:
+```bash
+./ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1 \
+-low_res "4:(1920x1080)(1280x720)(640x360)" -i ${INPUT_FILE_HEVC_4K} \
+-filter_complex 'spliter_vpe=outputs=4[out0][out1][out2][out3]' \
+-map '[out0]' -c:v h264enc_vpe -preset fast -b:v 10000000 -c:a copy -f flv rtmp://10.10.3.88:1935/live/10M \
+-map '[out1]' -c:v h264enc_vpe -preset fast -b:v 5000000 -c:a copy -f flv rtmp://10.10.3.88:1935/live/5M \
+-map '[out2]' -c:v h264enc_vpe -preset fast -b:v 3000000 -c:a copy -f flv rtmp://10.10.3.88:1935/live/3M \
+-map '[out3]' -c:v h264enc_vpe -preset fast -b:v 500000 -c:a copy -f flv rtmp://10.10.3.88:1935/live/500k
+```
+###### Play
+```bash
+ffplay rtmp://10.10.3.88:1935/live/10M
+ffplay rtmp://10.10.3.88:1935/live/5M
+ffplay rtmp://10.10.3.88:1935/live/3M
+ffplay rtmp://10.10.3.88:1935/live/500k
+```
+
+## Enable dynamic bitrate change through config file:
+Need to add "pic_rc=1:pic_rc_config=rc.cfg" into -enc_params, then user can change file "rc.cfg" to put target bitrate:
+```bash
+sudo ./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -i /dev/video0 -filter_hw_device "dev0" \
+-filter_complex "hwupload_vpe" -c:v h264enc_vpe -preset fast -b:v 500000 \
+-enc_params "intra_pic_rate=15:pic_rc=1:pic_rc_config=rc.cfg" \
+-f rtp_mpegts rtp://10.10.3.88:9999
+echo 300000 > rc.cfg
+```
+
+# 5.Use VPE in K8S
 
 If you's are running VPE on Solios-X platform, please follow below link to know how to let it working under k8s:
 https://github.com/VeriSilicon/solios-x-device-plugin
