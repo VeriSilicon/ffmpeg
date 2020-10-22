@@ -479,6 +479,10 @@ static av_cold int vpe_h26x_encode_close(AVCodecContext *avctx)
         vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
     }
 
+    if (avctx->extradata) {
+        av_freep(&avctx->extradata);
+    }
+
     vpe_h26x_encode_release_param_list(avctx);
 
     if (enc_ctx->ctx) {
