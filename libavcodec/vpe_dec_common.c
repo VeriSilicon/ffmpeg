@@ -110,7 +110,8 @@ int ff_vpe_decode_init(AVCodecContext *avctx, VpiPlugin type)
     // Create the VPE context
     ret = vpi_create(&dec_ctx->ctx, &dec_ctx->vpi, vpedev_ctx->device, type);
     if (ret) {
-        av_log(avctx, AV_LOG_ERROR, "vpi create failure ret %d\n", ret);
+        av_log(avctx, AV_LOG_ERROR, "vpi create failure error=%s(%d)\n",
+               vpi_error_str(ret), ret);
         return AVERROR_EXTERNAL;
     }
 
@@ -134,7 +135,8 @@ int ff_vpe_decode_init(AVCodecContext *avctx, VpiPlugin type)
     // Initialize the VPE decoder
     ret = dec_ctx->vpi->init(dec_ctx->ctx, dec_ctx->dec_setting);
     if (ret) {
-        av_log(avctx, AV_LOG_ERROR, "vpi decode init failure\n");
+        av_log(avctx, AV_LOG_ERROR, "vpi decode init failure, error=%s(%d)\n",
+               vpi_error_str(ret), ret);
         return AVERROR_EXTERNAL;
     }
 

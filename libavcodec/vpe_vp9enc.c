@@ -497,7 +497,8 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
 
     ret = vpi_create(&ctx->ctx, &ctx->vpi, vpedev_ctx->device, VP9ENC_VPE);
     if (ret != 0) {
-        av_log(avctx, AV_LOG_ERROR, "VP9 enc vpi_create failed\n");
+        av_log(avctx, AV_LOG_ERROR, "VP9 enc vpi_create failed, error=%s(%d)\n",
+               vpi_error_str(ret), ret);
         return AVERROR_EXTERNAL;
     }
 
@@ -509,7 +510,8 @@ static av_cold int vpe_enc_vp9_init(AVCodecContext *avctx)
 
     ret = ctx->vpi->init(ctx->ctx, psetting);
     if (ret != 0) {
-        av_log(avctx, AV_LOG_ERROR, "VP9 enc init failed\n");
+        av_log(avctx, AV_LOG_ERROR, "VP9 enc init failed, error=%s(%d)\n",
+               vpi_error_str(ret), ret);
         return AVERROR_EXTERNAL;
     }
 
@@ -557,7 +559,8 @@ static int vpe_enc_vp9_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
         /*Convert output packet from VpiPacket to AVPacket*/
         vpe_vp9enc_output_packet(&vpi_packet, avpkt);
     } else {
-        av_log(avctx, AV_LOG_ERROR, "VP9 enc encode failed\n");
+        av_log(avctx, AV_LOG_ERROR, "VP9 enc encode failed, error=%s(%d)\n",
+               vpi_error_str(ret), ret);
         ret = AVERROR_EXTERNAL;
     }
 

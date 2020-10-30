@@ -145,7 +145,8 @@ static int vpe_upload_config_input(AVFilterLink *inlink)
 
     ret = s->vpi->init(s->ctx, s->cfg);
     if (ret) {
-        av_log(ctx, AV_LOG_ERROR, "vpi hwupload init failure\n");
+        av_log(ctx, AV_LOG_ERROR, "vpi hwupload init failure, error=%s(%d)\n",
+               vpi_error_str(ret), ret);
         return AVERROR_EXTERNAL;
     }
 
@@ -236,7 +237,9 @@ static int vpe_upload_filter_frame(AVFilterLink *link, AVFrame *in)
 
     ret = ctx->vpi->process(ctx->ctx, in_frame, out_frame);
     if (ret) {
-        av_log(ctx, AV_LOG_ERROR,"hwupload_vpe filter frame failed\n");
+        av_log(ctx, AV_LOG_ERROR,
+               "hwupload_vpe filter frame failed,error=%s(%d)\n",
+               vpi_error_str(ret), ret);
         return AVERROR_EXTERNAL;
     }
 

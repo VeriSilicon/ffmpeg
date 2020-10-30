@@ -156,7 +156,9 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     /*Create context and get the APIs for h26x encoder from VPI layer */
     ret = vpi_create(&enc_ctx->ctx, &enc_ctx->api, vpedev_ctx->device, H26XENC_VPE);
     if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "h26x_enc vpe create failure %d\n", ret);
+        av_log(avctx, AV_LOG_ERROR,
+               "h26x_enc vpe create failed, error=%s(%d)\n", vpi_error_str(ret),
+               ret);
         return AVERROR_EXTERNAL;
     }
 
@@ -226,7 +228,9 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     /*Call the VPE h26x encoder initialization function*/
     ret = enc_ctx->api->init(enc_ctx->ctx, &enc_ctx->h26x_enc_cfg);
     if (ret < 0) {
-        av_log(avctx, AV_LOG_ERROR, "vpe_h264x_encode_init failure\n");
+        av_log(avctx, AV_LOG_ERROR,
+               "vpe_h264x_encode_init failed, error=%s(%d)\n",
+               vpi_error_str(ret), ret);
         return AVERROR_EXTERNAL;
     }
 
