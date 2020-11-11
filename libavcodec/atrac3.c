@@ -58,6 +58,8 @@
 #define SAMPLES_PER_FRAME 1024
 #define MDCT_SIZE          512
 
+#define ATRAC3_VLC_BITS 8
+
 typedef struct GainBlock {
     AtracGainInfo g_block[4];
 } GainBlock;
@@ -111,11 +113,12 @@ typedef struct ATRAC3Context {
 
     AtracGCContext    gainc_ctx;
     FFTContext        mdct_ctx;
-    AVFloatDSPContext *fdsp;
+    void (*vector_fmul)(float *dst, const float *src0, const float *src1,
+                        int len);
 } ATRAC3Context;
 
 static DECLARE_ALIGNED(32, float, mdct_window)[MDCT_SIZE];
-static VLC_TYPE atrac3_vlc_table[4096][2];
+static VLC_TYPE atrac3_vlc_table[7 * 1 << ATRAC3_VLC_BITS][2];
 static VLC   spectral_coeff_tab[7];
 
 /**
@@ -144,7 +147,7 @@ static void imlt(ATRAC3Context *q, float *input, float *output, int odd_band)
     q->mdct_ctx.imdct_calc(&q->mdct_ctx, output, input);
 
     /* Perform windowing on the output. */
-    q->fdsp->vector_fmul(output, output, mdct_window, MDCT_SIZE);
+    q->vector_fmul(output, output, mdct_window, MDCT_SIZE);
 }
 
 /*
@@ -194,7 +197,6 @@ static av_cold int atrac3_decode_close(AVCodecContext *avctx)
 
     av_freep(&q->units);
     av_freep(&q->decoded_bytes_buffer);
-    av_freep(&q->fdsp);
 
     ff_mdct_end(&q->mdct_ctx);
 
@@ -245,7 +247,7 @@ static void read_quant_spectral_coeffs(GetBitContext *gb, int selector,
         if (selector != 1) {
             for (i = 0; i < num_codes; i++) {
                 huff_symb = get_vlc2(gb, spectral_coeff_tab[selector-1].table,
-                                     spectral_coeff_tab[selector-1].bits, 3);
+                                     ATRAC3_VLC_BITS, 1);
                 huff_symb += 1;
                 code = huff_symb >> 1;
                 if (huff_symb & 1)
@@ -255,7 +257,7 @@ static void read_quant_spectral_coeffs(GetBitContext *gb, int selector,
         } else {
             for (i = 0; i < num_codes; i++) {
                 huff_symb = get_vlc2(gb, spectral_coeff_tab[selector - 1].table,
-                                     spectral_coeff_tab[selector - 1].bits, 3);
+                                     ATRAC3_VLC_BITS, 1);
                 mantissas[i * 2    ] = mantissa_vlc_tab[huff_symb * 2    ];
                 mantissas[i * 2 + 1] = mantissa_vlc_tab[huff_symb * 2 + 1];
             }
@@ -851,6 +853,7 @@ static int atrac3al_decode_frame(AVCodecContext *avctx, void *data,
 
 static av_cold void atrac3_init_static_data(void)
 {
+    VLC_TYPE (*table)[2] = atrac3_vlc_table;
     int i;
 
     init_imdct_window();
@@ -858,12 +861,12 @@ static av_cold void atrac3_init_static_data(void)
 
     /* Initialize the VLC tables. */
     for (i = 0; i < 7; i++) {
-        spectral_coeff_tab[i].table = &atrac3_vlc_table[atrac3_vlc_offs[i]];
-        spectral_coeff_tab[i].table_allocated = atrac3_vlc_offs[i + 1] -
-                                                atrac3_vlc_offs[i    ];
-        init_vlc(&spectral_coeff_tab[i], 9, huff_tab_sizes[i],
+        spectral_coeff_tab[i].table           = table;
+        spectral_coeff_tab[i].table_allocated = 256;
+        init_vlc(&spectral_coeff_tab[i], ATRAC3_VLC_BITS, huff_tab_sizes[i],
                  huff_bits[i],  1, 1,
                  huff_codes[i], 1, 1, INIT_VLC_USE_NEW_STATIC);
+        table += 256;
     }
 }
 
@@ -874,6 +877,7 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
     int version, delay, samples_per_frame, frame_factor;
     const uint8_t *edata_ptr = avctx->extradata;
     ATRAC3Context *q = avctx->priv_data;
+    AVFloatDSPContext *fdsp;
 
     if (avctx->channels < MIN_CHANNELS || avctx->channels > MAX_CHANNELS) {
         av_log(avctx, AV_LOG_ERROR, "Channel configuration error!\n");
@@ -977,7 +981,6 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
     /* initialize the MDCT transform */
     if ((ret = ff_mdct_init(&q->mdct_ctx, 9, 1, 1.0 / 32768)) < 0) {
         av_log(avctx, AV_LOG_ERROR, "Error initializing MDCT\n");
-        av_freep(&q->decoded_bytes_buffer);
         return ret;
     }
 
@@ -998,13 +1001,15 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
     }
 
     ff_atrac_init_gain_compensation(&q->gainc_ctx, 4, 3);
-    q->fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    fdsp = avpriv_float_dsp_alloc(avctx->flags & AV_CODEC_FLAG_BITEXACT);
+    if (!fdsp)
+        return AVERROR(ENOMEM);
+    q->vector_fmul = fdsp->vector_fmul;
+    av_free(fdsp);
 
     q->units = av_mallocz_array(avctx->channels, sizeof(*q->units));
-    if (!q->units || !q->fdsp) {
-        atrac3_decode_close(avctx);
+    if (!q->units)
         return AVERROR(ENOMEM);
-    }
 
     return 0;
 }
@@ -1021,6 +1026,7 @@ AVCodec ff_atrac3_decoder = {
     .capabilities     = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DR1,
     .sample_fmts      = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                         AV_SAMPLE_FMT_NONE },
+    .caps_internal    = FF_CODEC_CAP_INIT_CLEANUP,
 };
 
 AVCodec ff_atrac3al_decoder = {
@@ -1035,4 +1041,5 @@ AVCodec ff_atrac3al_decoder = {
     .capabilities     = AV_CODEC_CAP_SUBFRAMES | AV_CODEC_CAP_DR1,
     .sample_fmts      = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
                                                         AV_SAMPLE_FMT_NONE },
+    .caps_internal    = FF_CODEC_CAP_INIT_CLEANUP,
 };

@@ -25,17 +25,17 @@
 #include "libavcodec/internal.h"
 #include "libavutil/intreadwrite.h"
 
-#define ISSQH(x)  ((x) == 0xB0 )
-#define ISEND(x)  ((x) == 0xB1 )
-#define ISPIC(x)  ((x) == 0xB3 || (x) == 0xB6)
-#define ISUNIT(x) ( ISSQH(x) || ISEND(x) || (x) == 0xB2 || ISPIC(x) || (x) == 0xB5 || (x) == 0xB7 )
-#define ISAVS2(x) ((x) == 0x20 || (x) == 0x22 || (x) == 0x30 || (x) == 0x32 )
+#define AVS2_ISSQH(x)  ((x) == 0xB0)
+#define AVS2_ISEND(x)  ((x) == 0xB1)
+#define AVS2_ISPIC(x)  ((x) == 0xB3 || (x) == 0xB6)
+#define AVS2_ISUNIT(x) (AVS2_ISSQH(x) || AVS2_ISEND(x) || (x) == 0xB2 || AVS2_ISPIC(x) || (x) == 0xB5 || (x) == 0xB7)
+#define AVS2_ISPROFILE(x) ((x) == 0x20 || (x) == 0x22 || (x) == 0x30 || (x) == 0x32)
 
 static int avs2_probe(const AVProbeData *p)
 {
-    uint32_t code= -1, hds=0, pic=0, seq=0;
-    uint8_t state=0;
-    const uint8_t *ptr = p->buf, *end = p->buf + p->buf_size, *sqb=0;
+    uint32_t code = -1, hds = 0, pic = 0, seq = 0;
+    uint8_t state = 0;
+    const uint8_t *ptr = p->buf, *end = p->buf + p->buf_size, *sqb = 0;
     if (AV_RB32(p->buf) != 0x1B0){
         return 0;
     }
@@ -44,18 +44,18 @@ static int avs2_probe(const AVProbeData *p)
         ptr = avpriv_find_start_code(ptr, end, &code);
         state = code & 0xFF;
         if ((code & 0xffffff00) == 0x100) {
-            if (ISUNIT(state)) {
+            if (AVS2_ISUNIT(state)) {
                 if (sqb && !hds) {
                     hds = ptr - sqb;
                 }
-                if (ISSQH(state)) {
-                    if (!ISAVS2(*ptr))
+                if (AVS2_ISSQH(state)) {
+                    if (!AVS2_ISPROFILE(*ptr))
                         return 0;
                     sqb = ptr;
                     seq++;
-                } else if (ISPIC(state)) {
+                } else if (AVS2_ISPIC(state)) {
                     pic++;
-                } else if (ISEND(state)) {
+                } else if (AVS2_ISEND(state)) {
                     break;
                 }
             }

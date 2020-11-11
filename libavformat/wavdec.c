@@ -154,7 +154,7 @@ static int wav_probe(const AVProbeData *p)
 static void handle_stream_probing(AVStream *st)
 {
     if (st->codecpar->codec_id == AV_CODEC_ID_PCM_S16LE) {
-        st->request_probe = AVPROBE_SCORE_EXTENSION;
+        st->internal->request_probe = AVPROBE_SCORE_EXTENSION;
         st->probe_packets = FFMIN(st->probe_packets, 32);
     }
 }
@@ -902,6 +902,7 @@ static int w64_read_header(AVFormatContext *s)
         } else if (!memcmp(guid, ff_w64_guid_summarylist, 16)) {
             int64_t start, end, cur;
             uint32_t count, chunk_size, i;
+            int64_t filesize  = avio_size(s->pb);
 
             start = avio_tell(pb);
             end = start + FFALIGN(size, INT64_C(8)) - 24;
@@ -916,7 +917,7 @@ static int w64_read_header(AVFormatContext *s)
                 chunk_key[4] = 0;
                 avio_read(pb, chunk_key, 4);
                 chunk_size = avio_rl32(pb);
-                if (chunk_size == UINT32_MAX)
+                if (chunk_size == UINT32_MAX || (filesize >= 0 && chunk_size > filesize))
                     return AVERROR_INVALIDDATA;
 
                 value = av_mallocz(chunk_size + 1);

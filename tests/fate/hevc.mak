@@ -197,22 +197,22 @@ endef
 
 define FATE_HEVC_TEST_10BIT
 FATE_HEVC += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv420p10le
+fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv420p10le -vf scale
 endef
 
 define FATE_HEVC_TEST_422_10BIT
 FATE_HEVC += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv422p10le
+fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv422p10le -vf scale
 endef
 
 define FATE_HEVC_TEST_422_10BIN
 FATE_HEVC += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bin -pix_fmt yuv422p10le
+fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bin -pix_fmt yuv422p10le -vf scale
 endef
 
 define FATE_HEVC_TEST_422_10BIN_LARGE
 FATE_HEVC_LARGE += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bin -pix_fmt yuv422p10le
+fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bin -pix_fmt yuv422p10le -vf scale
 endef
 
 define FATE_HEVC_TEST_444_8BIT
@@ -222,12 +222,12 @@ endef
 
 define FATE_HEVC_TEST_444_12BIT
 FATE_HEVC += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv444p12le
+fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv444p12le -vf scale
 endef
 
 define FATE_HEVC_TEST_444_12BIT_LARGE
 FATE_HEVC_LARGE += fate-hevc-conformance-$(1)
-fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv444p12le
+fate-hevc-conformance-$(1): CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc-conformance/$(1).bit -pix_fmt yuv444p12le -vf scale
 endef
 
 $(foreach N,$(HEVC_SAMPLES),$(eval $(call FATE_HEVC_TEST,$(N))))
@@ -275,6 +275,9 @@ FATE_HEVC-$(call DEMDEC, MOV, HEVC) += fate-hevc-two-first-slice
 
 fate-hevc-cabac-tudepth: CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc/cbf_cr_cb_TUDepth_4_circle.h265 -pix_fmt yuv444p
 FATE_HEVC-$(call DEMDEC, HEVC, HEVC) += fate-hevc-cabac-tudepth
+
+fate-hevc-small422chroma: CMD = framecrc -flags unaligned -i $(TARGET_SAMPLES)/hevc/food.hevc -pix_fmt yuv422p10le -vf scale
+FATE_HEVC-$(call DEMDEC, HEVC, HEVC) += fate-hevc-small422chroma
 
 FATE_SAMPLES_AVCONV += $(FATE_HEVC-yes)
 FATE_SAMPLES_FFPROBE += $(FATE_HEVC_FFPROBE-yes)

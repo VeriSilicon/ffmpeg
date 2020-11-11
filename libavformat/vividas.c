@@ -28,6 +28,7 @@
  * @sa http://wiki.multimedia.cx/index.php?title=Vividas_VIV
  */
 
+#include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 #include "avio_internal.h"
 #include "avformat.h"
@@ -156,7 +157,7 @@ static void decode_block(uint8_t *src, uint8_t *dest, unsigned size,
         uint32_t tmpkey = *key_ptr - key;
         if (a2 > s) {
             a2 = s;
-            avpriv_request_sample(NULL, "tiny aligned block\n");
+            avpriv_request_sample(NULL, "tiny aligned block");
         }
         memcpy(tmp + align, src, a2);
         xor_block(tmp, tmp, 4, key, &tmpkey);
@@ -293,6 +294,8 @@ static int track_header(VividasDemuxContext *viv, AVFormatContext *s,  uint8_t *
 
     for (i=0;i<val_1;i++) {
         int c = avio_r8(pb);
+        if (avio_feof(pb))
+            return AVERROR_EOF;
         for (j=0;j<c;j++) {
             if (avio_feof(pb))
                 return AVERROR_EOF;
@@ -317,6 +320,8 @@ static int track_header(VividasDemuxContext *viv, AVFormatContext *s,  uint8_t *
 
     for (i = 0; i < num_video; i++) {
         AVStream *st = avformat_new_stream(s, NULL);
+        int num, den;
+
         if (!st)
             return AVERROR(ENOMEM);
 
@@ -329,8 +334,9 @@ static int track_header(VividasDemuxContext *viv, AVFormatContext *s,  uint8_t *
         off += ffio_read_varlen(pb);
         avio_r8(pb); // '3'
         avio_r8(pb); // val_7
-        st->time_base.num = avio_rl32(pb); // frame_time
-        st->time_base.den = avio_rl32(pb); // time_base
+        num = avio_rl32(pb); // frame_time
+        den = avio_rl32(pb); // time_base
+        avpriv_set_pts_info(st, 64, num, den);
         st->nb_frames = avio_rl32(pb); // n frames
         st->codecpar->width = avio_rl16(pb); // width
         st->codecpar->height = avio_rl16(pb); // height
@@ -374,7 +380,7 @@ static int track_header(VividasDemuxContext *viv, AVFormatContext *s,  uint8_t *
 
         if (avio_tell(pb) < off) {
             int num_data;
-            int xd_size = 0;
+            int xd_size = 1;
             int data_len[256];
             int offset = 1;
             uint8_t *p;
@@ -388,10 +394,10 @@ static int track_header(VividasDemuxContext *viv, AVFormatContext *s,  uint8_t *
                     return AVERROR_INVALIDDATA;
                 }
                 data_len[j] = len;
-                xd_size += len;
+                xd_size += len + 1 + len/255;
             }
 
-            ret = ff_alloc_extradata(st->codecpar, 64 + xd_size + xd_size / 255);
+            ret = ff_alloc_extradata(st->codecpar, xd_size);
             if (ret < 0)
                 return ret;
 
@@ -400,9 +406,7 @@ static int track_header(VividasDemuxContext *viv, AVFormatContext *s,  uint8_t *
 
             for (j = 0; j < num_data - 1; j++) {
                 unsigned delta = av_xiphlacing(&p[offset], data_len[j]);
-                if (delta > data_len[j]) {
-                    return AVERROR_INVALIDDATA;
-                }
+                av_assert0(delta <= xd_size - offset);
                 offset += delta;
             }
 
@@ -413,6 +417,7 @@ static int track_header(VividasDemuxContext *viv, AVFormatContext *s,  uint8_t *
                     av_freep(&st->codecpar->extradata);
                     break;
                 }
+                av_assert0(data_len[j] <= xd_size - offset);
                 offset += data_len[j];
             }
 
@@ -668,6 +673,10 @@ static int viv_read_packet(AVFormatContext *s,
     if (!pb)
         return AVERROR(EIO);
     off = avio_tell(pb);
+
+    if (viv->current_sb_entry >= viv->n_sb_entries)
+        return AVERROR_INVALIDDATA;
+
     off += viv->sb_entries[viv->current_sb_entry].size;
 
     if (viv->sb_entries[viv->current_sb_entry].flag == 0) {
@@ -677,7 +686,7 @@ static int viv_read_packet(AVFormatContext *s,
             return AVERROR_INVALIDDATA;
 
         ffio_read_varlen(pb);
-        if (v_size > INT_MAX)
+        if (v_size > INT_MAX || !v_size)
             return AVERROR_INVALIDDATA;
         ret = av_get_packet(pb, pkt, v_size);
         if (ret < 0)
@@ -706,7 +715,7 @@ static int viv_read_packet(AVFormatContext *s,
     } else {
         uint64_t v_size = ffio_read_varlen(pb);
 
-        if (v_size > INT_MAX)
+        if (v_size > INT_MAX || !v_size)
             return AVERROR_INVALIDDATA;
         ret = av_get_packet(pb, pkt, v_size);
         if (ret < 0)

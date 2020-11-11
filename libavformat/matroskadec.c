@@ -48,6 +48,7 @@
 #include "libavcodec/bytestream.h"
 #include "libavcodec/flac.h"
 #include "libavcodec/mpeg4audio.h"
+#include "libavcodec/packet_internal.h"
 
 #include "avformat.h"
 #include "avio_internal.h"
@@ -2991,7 +2992,7 @@ static int matroska_deliver_packet(MatroskaDemuxContext *matroska,
         MatroskaTrack *tracks = matroska->tracks.elem;
         MatroskaTrack *track;
 
-        ff_packet_list_get(&matroska->queue, &matroska->queue_end, pkt);
+        avpriv_packet_list_get(&matroska->queue, &matroska->queue_end, pkt);
         track = &tracks[pkt->stream_index];
         if (track->has_palette) {
             uint8_t *pal = av_packet_new_side_data(pkt, AV_PKT_DATA_PALETTE, AVPALETTE_SIZE);
@@ -3013,7 +3014,7 @@ static int matroska_deliver_packet(MatroskaDemuxContext *matroska,
  */
 static void matroska_clear_queue(MatroskaDemuxContext *matroska)
 {
-    ff_packet_list_free(&matroska->queue, &matroska->queue_end);
+    avpriv_packet_list_free(&matroska->queue, &matroska->queue_end);
 }
 
 static int matroska_parse_laces(MatroskaDemuxContext *matroska, uint8_t **buf,
@@ -3179,7 +3180,7 @@ static int matroska_parse_rm_audio(MatroskaDemuxContext *matroska,
         track->audio.buf_timecode = AV_NOPTS_VALUE;
         pkt->pos                  = pos;
         pkt->stream_index         = st->index;
-        ret = ff_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, 0);
+        ret = avpriv_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, NULL, 0);
         if (ret < 0) {
             av_packet_unref(pkt);
             return AVERROR(ENOMEM);
@@ -3401,7 +3402,7 @@ static int matroska_parse_webvtt(MatroskaDemuxContext *matroska,
     pkt->duration = duration;
     pkt->pos = pos;
 
-    err = ff_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, 0);
+    err = avpriv_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, NULL, 0);
     if (err < 0) {
         av_packet_unref(pkt);
         return AVERROR(ENOMEM);
@@ -3512,7 +3513,7 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
-    res = ff_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, 0);
+    res = avpriv_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, NULL, 0);
     if (res < 0) {
         av_packet_unref(pkt);
         return AVERROR(ENOMEM);
@@ -3596,7 +3597,7 @@ static int matroska_parse_block(MatroskaDemuxContext *matroska, AVBufferRef *buf
             return res;
         if (is_keyframe)
             matroska->skip_to_keyframe = 0;
-        else if (!st->skip_to_keyframe) {
+        else if (!st->internal->skip_to_keyframe) {
             av_log(matroska->ctx, AV_LOG_ERROR, "File is broken, keyframes not correctly marked!\n");
             matroska->skip_to_keyframe = 0;
         }
@@ -3765,13 +3766,13 @@ static int matroska_read_seek(AVFormatContext *s, int stream_index,
         matroska_parse_cues(matroska);
     }
 
-    if (!st->nb_index_entries)
+    if (!st->internal->nb_index_entries)
         goto err;
-    timestamp = FFMAX(timestamp, st->index_entries[0].timestamp);
+    timestamp = FFMAX(timestamp, st->internal->index_entries[0].timestamp);
 
-    if ((index = av_index_search_timestamp(st, timestamp, flags)) < 0 || index == st->nb_index_entries - 1) {
-        matroska_reset_status(matroska, 0, st->index_entries[st->nb_index_entries - 1].pos);
-        while ((index = av_index_search_timestamp(st, timestamp, flags)) < 0 || index == st->nb_index_entries - 1) {
+    if ((index = av_index_search_timestamp(st, timestamp, flags)) < 0 || index == st->internal->nb_index_entries - 1) {
+        matroska_reset_status(matroska, 0, st->internal->index_entries[st->internal->nb_index_entries - 1].pos);
+        while ((index = av_index_search_timestamp(st, timestamp, flags)) < 0 || index == st->internal->nb_index_entries - 1) {
             matroska_clear_queue(matroska);
             if (matroska_parse_cluster(matroska) < 0)
                 break;
@@ -3779,7 +3780,7 @@ static int matroska_read_seek(AVFormatContext *s, int stream_index,
     }
 
     matroska_clear_queue(matroska);
-    if (index < 0 || (matroska->cues_parsing_deferred < 0 && index == st->nb_index_entries - 1))
+    if (index < 0 || (matroska->cues_parsing_deferred < 0 && index == st->internal->nb_index_entries - 1))
         goto err;
 
     tracks = matroska->tracks.elem;
@@ -3791,17 +3792,17 @@ static int matroska_read_seek(AVFormatContext *s, int stream_index,
     }
 
     /* We seek to a level 1 element, so set the appropriate status. */
-    matroska_reset_status(matroska, 0, st->index_entries[index].pos);
+    matroska_reset_status(matroska, 0, st->internal->index_entries[index].pos);
     if (flags & AVSEEK_FLAG_ANY) {
-        st->skip_to_keyframe = 0;
+        st->internal->skip_to_keyframe = 0;
         matroska->skip_to_timecode = timestamp;
     } else {
-        st->skip_to_keyframe = 1;
-        matroska->skip_to_timecode = st->index_entries[index].timestamp;
+        st->internal->skip_to_keyframe = 1;
+        matroska->skip_to_timecode = st->internal->index_entries[index].timestamp;
     }
     matroska->skip_to_keyframe = 1;
     matroska->done             = 0;
-    ff_update_cur_dts(s, st, st->index_entries[index].timestamp);
+    ff_update_cur_dts(s, st, st->internal->index_entries[index].timestamp);
     return 0;
 err:
     // slightly hackish but allows proper fallback to
@@ -3809,7 +3810,7 @@ err:
     matroska_reset_status(matroska, 0, -1);
     matroska->resync_pos = -1;
     matroska_clear_queue(matroska);
-    st->skip_to_keyframe =
+    st->internal->skip_to_keyframe =
     matroska->skip_to_keyframe = 0;
     matroska->done = 0;
     return -1;
@@ -3846,8 +3847,8 @@ static CueDesc get_cue_desc(AVFormatContext *s, int64_t ts, int64_t cues_start) 
     MatroskaDemuxContext *matroska = s->priv_data;
     CueDesc cue_desc;
     int i;
-    int nb_index_entries = s->streams[0]->nb_index_entries;
-    AVIndexEntry *index_entries = s->streams[0]->index_entries;
+    int nb_index_entries = s->streams[0]->internal->nb_index_entries;
+    AVIndexEntry *index_entries = s->streams[0]->internal->index_entries;
     if (ts >= matroska->duration * matroska->time_scale) return (CueDesc) {-1, -1, -1, -1};
     for (i = 1; i < nb_index_entries; i++) {
         if (index_entries[i - 1].timestamp * matroska->time_scale <= ts &&
@@ -3877,11 +3878,11 @@ static int webm_clusters_start_with_keyframe(AVFormatContext *s)
     uint32_t id = matroska->current_id;
     int64_t cluster_pos, before_pos;
     int index, rv = 1;
-    if (s->streams[0]->nb_index_entries <= 0) return 0;
+    if (s->streams[0]->internal->nb_index_entries <= 0) return 0;
     // seek to the first cluster using cues.
     index = av_index_search_timestamp(s->streams[0], 0, 0);
     if (index < 0)  return 0;
-    cluster_pos = s->streams[0]->index_entries[index].pos;
+    cluster_pos = s->streams[0]->internal->index_entries[index].pos;
     before_pos = avio_tell(s->pb);
     while (1) {
         uint64_t cluster_id, cluster_length;
@@ -4005,9 +4006,9 @@ static int64_t webm_dash_manifest_compute_bandwidth(AVFormatContext *s, int64_t 
     double bandwidth = 0.0;
     int i;
 
-    for (i = 0; i < st->nb_index_entries; i++) {
+    for (i = 0; i < st->internal->nb_index_entries; i++) {
         int64_t prebuffer_ns = 1000000000;
-        int64_t time_ns = st->index_entries[i].timestamp * matroska->time_scale;
+        int64_t time_ns = st->internal->index_entries[i].timestamp * matroska->time_scale;
         double nano_seconds_per_second = 1000000000.0;
         int64_t prebuffered_ns = time_ns + prebuffer_ns;
         double prebuffer_bytes = 0.0;
@@ -4145,14 +4146,14 @@ static int webm_dash_manifest_cues(AVFormatContext *s, int64_t init_range)
 
     // store cue point timestamps as a comma separated list for checking subsegment alignment in
     // the muxer. assumes that each timestamp cannot be more than 20 characters long.
-    buf = av_malloc_array(s->streams[0]->nb_index_entries, 20);
+    buf = av_malloc_array(s->streams[0]->internal->nb_index_entries, 20);
     if (!buf) return -1;
     strcpy(buf, "");
-    for (i = 0; i < s->streams[0]->nb_index_entries; i++) {
+    for (i = 0; i < s->streams[0]->internal->nb_index_entries; i++) {
         int ret = snprintf(buf + end, 20,
-                           "%" PRId64"%s", s->streams[0]->index_entries[i].timestamp,
-                           i != s->streams[0]->nb_index_entries - 1 ? "," : "");
-        if (ret <= 0 || (ret == 20 && i ==  s->streams[0]->nb_index_entries - 1)) {
+                           "%" PRId64"%s", s->streams[0]->internal->index_entries[i].timestamp,
+                           i != s->streams[0]->internal->nb_index_entries - 1 ? "," : "");
+        if (ret <= 0 || (ret == 20 && i ==  s->streams[0]->internal->nb_index_entries - 1)) {
             av_log(s, AV_LOG_ERROR, "timestamp too long.\n");
             av_free(buf);
             return AVERROR_INVALIDDATA;

@@ -731,6 +731,33 @@ adelay=delays=64S:all=1
 @end example
 @end itemize
 
+@section adenorm
+Remedy denormals in audio by adding extremely low-level noise.
+
+A description of the accepted parameters follows.
+
+@table @option
+@item level
+Set level of added noise in dB. Default is @code{-351}.
+Allowed range is from -451 to -90.
+
+@item type
+Set type of added noise.
+
+@table @option
+@item dc
+Add DC signal.
+@item ac
+Add AC signal.
+@item square
+Add square signal.
+@item pulse
+Add pulse signal.
+@end table
+
+Default is @code{dc}.
+@end table
+
 @section aderivative, aintegral
 
 Compute derivative/integral of audio stream.
@@ -1314,6 +1341,21 @@ Force the output to either unsigned 8-bit or signed 16-bit stereo
 aformat=sample_fmts=u8|s16:channel_layouts=stereo
 @end example
 
+@section afreqshift
+Apply frequency shift to input audio samples.
+
+The filter accepts the following options:
+
+@table @option
+@item shift
+Specify frequency shift. Allowed range is -INT_MAX to INT_MAX.
+Default value is 0.0.
+@end table
+
+@subsection Commands
+
+This filter supports the above option as @ref{commands}.
+
 @section agate
 
 A gate is mainly used to reduce lower parts of a signal. This kind of signal
@@ -1408,6 +1450,8 @@ Set output gain.
 Set coefficients format.
 
 @table @samp
+@item sf
+analog transfer function
 @item tf
 digital transfer function
 @item zp
@@ -1421,8 +1465,16 @@ S-plane zeros/poles
 @end table
 
 @item process, r
-Set kind of processing.
-Can be @code{d} - direct or @code{s} - serial cascading. Default is @code{s}.
+Set type of processing.
+
+@table @samp
+@item d
+direct processing
+@item s
+serial processing
+@item p
+parallel processing
+@end table
 
 @item precision, e
 Set filtering precision.
@@ -1458,7 +1510,7 @@ displayed. This option is used only when @var{response} is enabled.
 Set video stream size. This option is used only when @var{response} is enabled.
 @end table
 
-Coefficients in @code{tf} format are separated by spaces and are in ascending
+Coefficients in @code{tf} and @code{sf} format are separated by spaces and are in ascending
 order.
 
 Coefficients in @code{zp} format are separated by spaces and order of coefficients
@@ -1482,6 +1534,12 @@ aiir=k=1:z=7.957584807809675810E-1 -2.575128568908332300 3.674839853930788710 -2
 Same as above but in @code{zp} format:
 @example
 aiir=k=0.79575848078096756:z=0.80918701+0.58773007i 0.80918701-0.58773007i 0.80884700+0.58784055i 0.80884700-0.58784055i:p=0.63892345+0.59951235i 0.63892345-0.59951235i 0.79582691+0.44198673i 0.79582691-0.44198673i:f=zp:r=s
+@end example
+
+@item
+Apply 3-rd order analog normalized Butterworth low-pass filter, using analog transfer function format:
+@example
+aiir=z=1.3057 0 0 0:p=1.3057 2.3892 2.1860 1:f=sf:r=d
 @end example
 @end itemize
 
@@ -1580,6 +1638,7 @@ Set transform type of IIR filter.
 @item di
 @item dii
 @item tdii
+@item latt
 @end table
 @end table
 
@@ -2048,6 +2107,21 @@ It accepts the following values:
 @end table
 @end table
 
+@section aphaseshift
+Apply phase shift to input audio samples.
+
+The filter accepts the following options:
+
+@table @option
+@item shift
+Specify phase shift. Allowed range is from -1.0 to 1.0.
+Default value is 0.0.
+@end table
+
+@subsection Commands
+
+This filter supports the above option as @ref{commands}.
+
 @section apulsator
 
 Audio pulsator is something between an autopanner and a tremolo.
@@ -2269,6 +2343,7 @@ Set type of soft-clipping.
 
 It accepts the following values:
 @table @option
+@item hard
 @item tanh
 @item atan
 @item cubic
@@ -2276,10 +2351,14 @@ It accepts the following values:
 @item alg
 @item quintic
 @item sin
+@item erf
 @end table
 
 @item param
 Set additional parameter which controls sigmoid function.
+
+@item oversample
+Set oversampling factor.
 @end table
 
 @subsection Commands
@@ -2708,6 +2787,7 @@ Set transform type of IIR filter.
 @item di
 @item dii
 @item tdii
+@item latt
 @end table
 @end table
 
@@ -2779,6 +2859,7 @@ Set transform type of IIR filter.
 @item di
 @item dii
 @item tdii
+@item latt
 @end table
 @end table
 
@@ -2857,6 +2938,7 @@ Set transform type of IIR filter.
 @item di
 @item dii
 @item tdii
+@item latt
 @end table
 @end table
 
@@ -2923,6 +3005,7 @@ Set transform type of IIR filter.
 @item di
 @item dii
 @item tdii
+@item latt
 @end table
 @end table
 
@@ -3654,6 +3737,7 @@ Set transform type of IIR filter.
 @item di
 @item dii
 @item tdii
+@item latt
 @end table
 @end table
 
@@ -4139,6 +4223,7 @@ Set transform type of IIR filter.
 @item di
 @item dii
 @item tdii
+@item latt
 @end table
 @end table
 
@@ -4473,6 +4558,7 @@ Set transform type of IIR filter.
 @item di
 @item dii
 @item tdii
+@item latt
 @end table
 @end table
 
@@ -5601,6 +5687,7 @@ Set transform type of IIR filter.
 @item di
 @item dii
 @item tdii
+@item latt
 @end table
 @end table
 
@@ -18270,6 +18357,29 @@ Show envelope. Default is disabled.
 
 @item ecolor, ec
 Set envelope color. Default is @code{gold}.
+
+@item slide
+Set slide mode.
+
+Available values for slide is:
+@table @samp
+@item frame
+Draw new frame when right border is reached.
+
+@item replace
+Replace old columns with new ones.
+
+@item scroll
+Scroll from right to left.
+
+@item rscroll
+Scroll from left to right.
+
+@item picture
+Draw single picture.
+@end table
+
+Default is @code{replace}.
 @end table
 
 @section threshold
@@ -19488,6 +19598,9 @@ Set input horizontal/vertical/diagonal field of view. Values in degrees.
 
 If diagonal field of view is set it overrides horizontal and vertical field of view.
 @end table
+
+@item octahedron
+Octahedron projection.
 @end table
 
 @item interp
@@ -19517,6 +19630,8 @@ Spline16 interpolation.
 @item gauss
 @item gaussian
 Gaussian interpolation.
+@item mitchell
+Mitchell interpolation.
 @end table
 
 Default value is @b{@samp{line}}.
@@ -23311,6 +23426,39 @@ Set color which will be used for drawing median phase. If color is
 @item video
 Enable video output. Default is enabled.
 @end table
+
+@subsection phasing detection
+
+The filter also detects out of phase and mono sequences in stereo streams.
+It logs the sequence start, end and duration when it lasts longer or as long as the minimum set.
+
+The filter accepts the following options for this detection:
+
+@table @option
+@item phasing
+Enable mono and out of phase detection. Default is disabled.
+
+@item tolerance, t
+Set phase tolerance for mono detection, in amplitude ratio. Default is @code{0}.
+Allowed range is @code{[0, 1]}.
+
+@item angle, a
+Set angle threshold for out of phase detection, in degree. Default is @code{170}.
+Allowed range is @code{[90, 180]}.
+
+@item duration, d
+Set mono or out of phase duration until notification, expressed in seconds. Default is @code{2}.
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Complete example with @command{ffmpeg} to detect 1 second of mono with 0.001 phase tolerance:
+@example
+ffmpeg -i stereo.wav -af aphasemeter=video=0:phasing=1:duration=1:tolerance=0.001 -f null -
+@end example
+@end itemize
 
 @section avectorscope
 

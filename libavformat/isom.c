@@ -290,6 +290,7 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_MAGICYUV, MKTAG('M', '0', 'R', '0') },
     { AV_CODEC_ID_MAGICYUV, MKTAG('M', '0', 'R', 'A') },
     { AV_CODEC_ID_MAGICYUV, MKTAG('M', '0', 'R', 'G') },
+    { AV_CODEC_ID_MAGICYUV, MKTAG('M', '0', 'Y', '0') },
     { AV_CODEC_ID_MAGICYUV, MKTAG('M', '0', 'Y', '2') },
     { AV_CODEC_ID_MAGICYUV, MKTAG('M', '0', 'Y', '4') },
     { AV_CODEC_ID_MAGICYUV, MKTAG('M', '8', 'R', 'G') },
@@ -314,6 +315,8 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
     { AV_CODEC_ID_PIXLET, MKTAG('p', 'x', 'l', 't') },
 
     { AV_CODEC_ID_NOTCHLC, MKTAG('n', 'c', 'l', 'c') },
+
+    { AV_CODEC_ID_RAWVIDEO, MKTAG('B', 'G', 'G', 'R') }, /* ASC Bayer BGGR */
 
     { AV_CODEC_ID_NONE, 0 },
 };

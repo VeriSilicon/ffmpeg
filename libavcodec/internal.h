@@ -145,6 +145,8 @@ typedef struct AVCodecInternal {
      * for decoding.
      */
     AVPacket *last_pkt_props;
+    AVPacketList *pkt_props;
+    AVPacketList *pkt_props_tail;
 
     /**
      * temporary buffer used for encoders to store their bitstream
@@ -310,11 +312,6 @@ int avpriv_h264_has_num_reorder_frames(AVCodecContext *avctx);
  * already locked
  */
 int ff_codec_open2_recursive(AVCodecContext *avctx, const AVCodec *codec, AVDictionary **options);
-
-/**
- * Finalize buf into extradata and set its size appropriately.
- */
-int avpriv_bprint_to_extradata(AVCodecContext *avctx, struct AVBPrint *buf);
 
 const uint8_t *avpriv_find_start_code(const uint8_t *p,
                                       const uint8_t *end,

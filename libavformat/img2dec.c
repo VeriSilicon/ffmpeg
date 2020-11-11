@@ -587,7 +587,7 @@ static int img_read_seek(AVFormatContext *s, int stream_index, int64_t timestamp
         int index = av_index_search_timestamp(st, timestamp, flags);
         if(index < 0)
             return -1;
-        s1->img_number = st->index_entries[index].pos;
+        s1->img_number = st->internal->index_entries[index].pos;
         return 0;
     }
 
@@ -682,6 +682,17 @@ static int bmp_probe(const AVProbeData *p)
         return AVPROBE_SCORE_EXTENSION + 1;
     }
     return AVPROBE_SCORE_EXTENSION / 4;
+}
+
+static int cri_probe(const AVProbeData *p)
+{
+    const uint8_t *b = p->buf;
+
+    if (   AV_RL32(b) == 1
+        && AV_RL32(b + 4) == 4
+        && AV_RN32(b + 8) == AV_RN32("DVCC"))
+        return AVPROBE_SCORE_MAX - 1;
+    return 0;
 }
 
 static int dds_probe(const AVProbeData *p)
@@ -1101,6 +1112,7 @@ AVInputFormat ff_image_ ## imgname ## _pipe_demuxer = {\
 };
 
 IMAGEAUTO_DEMUXER(bmp,     AV_CODEC_ID_BMP)
+IMAGEAUTO_DEMUXER(cri,     AV_CODEC_ID_CRI)
 IMAGEAUTO_DEMUXER(dds,     AV_CODEC_ID_DDS)
 IMAGEAUTO_DEMUXER(dpx,     AV_CODEC_ID_DPX)
 IMAGEAUTO_DEMUXER(exr,     AV_CODEC_ID_EXR)

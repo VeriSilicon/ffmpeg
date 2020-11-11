@@ -15,6 +15,12 @@ libavutil:     2017-10-21
 
 API changes, most recent first:
 
+2020-xx-xx - xxxxxxxxxx - lavf 58.64.100 - avformat.h
+  Add AVSTREAM_EVENT_FLAG_NEW_PACKETS.
+
+2020-xx-xx - xxxxxxxxxx - lavu 56.60.100 - buffer.h
+  Add a av_buffer_replace() convenience function.
+
 2020-09-xx - xxxxxxxxxx - lavu 56.59.100 - timecode.h
   Add av_timecode_make_smpte_tc_string2.
 
@@ -44,6 +50,8 @@ API changes, most recent first:
 2020-06-xx - xxxxxxxxxx - lavu 56.53.100 - log.h opt.h
   Add av_opt_child_class_iterate() and AVClass.child_class_iterate().
   Deprecate av_opt_child_class_next() and AVClass.child_class_next().
+
+-------- 8< --------- FFmpeg 4.3 was cut here -------- 8< ---------
 
 2020-06-05 - ec39c2276a - lavu 56.50.100 - buffer.h
   Passing NULL as alloc argument to av_buffer_pool_init2() is now allowed.

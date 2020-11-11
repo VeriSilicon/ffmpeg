@@ -44,9 +44,9 @@ static int64_t get_raw_size(enum AVPixelFormat fmt, int width, int height)
     case AV_PIX_FMT_YUV444P:
         return width * height * 3LL;
     case AV_PIX_FMT_YUV420P:
-        return (int64_t)(width * height) + AV_CEIL_RSHIFT(width, 1) * AV_CEIL_RSHIFT(height, 1);
+        return (int64_t)(width * height) + 2 * AV_CEIL_RSHIFT(width, 1) * AV_CEIL_RSHIFT(height, 1);
     case AV_PIX_FMT_YUV410P:
-        return (int64_t)(width * height) + AV_CEIL_RSHIFT(width, 2) * AV_CEIL_RSHIFT(height, 2);
+        return (int64_t)(width * height) + 2 * AV_CEIL_RSHIFT(width, 2) * AV_CEIL_RSHIFT(height, 2);
     }
 
     return 0;
@@ -177,10 +177,10 @@ static int dxtory_decode_v1_410(AVCodecContext *avctx, AVFrame *pic,
             V[huvborder] = src[1] + 0x80;
             src += 2;
         }
-        Y1 += pic->linesize[0] << 2;
-        Y2 += pic->linesize[0] << 2;
-        Y3 += pic->linesize[0] << 2;
-        Y4 += pic->linesize[0] << 2;
+        Y1 += pic->linesize[0] * 4;
+        Y2 += pic->linesize[0] * 4;
+        Y3 += pic->linesize[0] * 4;
+        Y4 += pic->linesize[0] * 4;
         U  += pic->linesize[1];
         V  += pic->linesize[2];
     }
@@ -637,7 +637,7 @@ static int dx2_decode_slice_410(GetBitContext *gb, AVFrame *frame,
             V[huvborder] = decode_sym(gb, lru[2]) ^ 0x80;
         }
 
-        Y += ystride << 2;
+        Y += ystride * 4;
         U += ustride;
         V += vstride;
     }
@@ -717,7 +717,7 @@ static int dx2_decode_slice_420(GetBitContext *gb, AVFrame *frame,
             V[huvborder] = decode_sym(gb, lru[2]) ^ 0x80;
         }
 
-        Y += ystride << 1;
+        Y += ystride * 2;
         U += ustride;
         V += vstride;
     }

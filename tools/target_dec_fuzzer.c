@@ -118,17 +118,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 #define DECODER_SYMBOL(CODEC) DECODER_SYMBOL0(CODEC)
         extern AVCodec DECODER_SYMBOL(FFMPEG_DECODER);
         codec_list[0] = &DECODER_SYMBOL(FFMPEG_DECODER);
-        avcodec_register(&DECODER_SYMBOL(FFMPEG_DECODER));
 
 #if FFMPEG_DECODER == tiff || FFMPEG_DECODER == tdsc
         extern AVCodec DECODER_SYMBOL(mjpeg);
         codec_list[1] = &DECODER_SYMBOL(mjpeg);
-        avcodec_register(&DECODER_SYMBOL(mjpeg));
 #endif
 
         c = &DECODER_SYMBOL(FFMPEG_DECODER);
 #else
-        avcodec_register_all();
         c = AVCodecInitialize(FFMPEG_CODEC);  // Done once.
 #endif
         av_log_set_level(AV_LOG_PANIC);
@@ -167,6 +164,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_MSRLE:       maxpixels  /= 16;    break;
     case AV_CODEC_ID_MSS2:        maxpixels  /= 16384; break;
     case AV_CODEC_ID_MSZH:        maxpixels  /= 128;   break;
+    case AV_CODEC_ID_OPUS:        maxsamples /= 16384; break;
     case AV_CODEC_ID_PNG:         maxpixels  /= 128;   break;
     case AV_CODEC_ID_APNG:        maxpixels  /= 128;   break;
     case AV_CODEC_ID_QTRLE:       maxpixels  /= 16;    break;
@@ -181,9 +179,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_VP7:         maxpixels  /= 256;   break;
     case AV_CODEC_ID_VP9:         maxpixels  /= 4096;  break;
     case AV_CODEC_ID_WMV3IMAGE:   maxpixels  /= 8192;  break;
+    case AV_CODEC_ID_WS_VQA:      maxpixels  /= 16384; break;
+    case AV_CODEC_ID_WMALOSSLESS: maxsamples /= 1024;  break;
     case AV_CODEC_ID_ZEROCODEC:   maxpixels  /= 128;   break;
     }
 
+    maxsamples_per_frame = FFMIN(maxsamples_per_frame, maxsamples);
 
     AVCodecContext* ctx = avcodec_alloc_context3(c);
     AVCodecContext* parser_avctx = avcodec_alloc_context3(NULL);
@@ -341,6 +342,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 ctx->error_concealment = 0;
             if (ec_pixels > maxpixels)
                 goto maximums_reached;
+
+            if (ctx->codec_type == AVMEDIA_TYPE_AUDIO &&
+                frame->nb_samples == 0 && !got_frame &&
+                (avpkt.flags & AV_PKT_FLAG_DISCARD))
+                nb_samples += ctx->max_samples;
 
             nb_samples += frame->nb_samples;
             if (nb_samples > maxsamples)

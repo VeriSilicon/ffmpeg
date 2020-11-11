@@ -46,6 +46,7 @@
 
 #include "avformat.h"
 #include "avio_internal.h"
+#include "avc.h"
 #if CONFIG_HTTP_PROTOCOL
 #include "http.h"
 #endif
@@ -337,6 +338,51 @@ static void write_codec_attr(AVStream *st, VariantStream *vs)
         } else {
             goto fail;
         }
+    } else if (st->codecpar->codec_id == AV_CODEC_ID_HEVC) {
+        uint8_t *data = st->codecpar->extradata;
+        int profile = FF_PROFILE_UNKNOWN;
+        int level = FF_LEVEL_UNKNOWN;
+
+        if (st->codecpar->profile != FF_PROFILE_UNKNOWN)
+            profile = st->codecpar->profile;
+        if (st->codecpar->level != FF_LEVEL_UNKNOWN)
+            level = st->codecpar->level;
+
+        /* check the boundary of data which from current position is small than extradata_size */
+        while (data && (data - st->codecpar->extradata + 19) < st->codecpar->extradata_size) {
+            /* get HEVC SPS NAL and seek to profile_tier_level */
+            if (!(data[0] | data[1] | data[2]) && data[3] == 1 && ((data[4] & 0x7E) == 0x42)) {
+                uint8_t *rbsp_buf;
+                int remain_size = 0;
+                int rbsp_size = 0;
+                /* skip start code + nalu header */
+                data += 6;
+                /* process by reference General NAL unit syntax */
+                remain_size = st->codecpar->extradata_size - (data - st->codecpar->extradata);
+                rbsp_buf = ff_nal_unit_extract_rbsp(data, remain_size, &rbsp_size, 0);
+                if (!rbsp_buf)
+                    return;
+                if (rbsp_size < 13) {
+                    av_freep(&rbsp_buf);
+                    break;
+                }
+                /* skip sps_video_parameter_set_id   u(4),
+                 *      sps_max_sub_layers_minus1    u(3),
+                 *  and sps_temporal_id_nesting_flag u(1) */
+                profile = rbsp_buf[1] & 0x1f;
+                /* skip 8 + 8 + 32 + 4 + 43 + 1 bit */
+                level = rbsp_buf[12];
+                av_freep(&rbsp_buf);
+                break;
+            }
+            data++;
+        }
+        if (st->codecpar->codec_tag == MKTAG('h','v','c','1') &&
+            profile != FF_PROFILE_UNKNOWN &&
+            level != FF_LEVEL_UNKNOWN) {
+            snprintf(attr, sizeof(attr), "%s.%d.4.L%d.B01", av_fourcc2str(st->codecpar->codec_tag), profile, level);
+        } else
+            goto fail;
     } else if (st->codecpar->codec_id == AV_CODEC_ID_MP2) {
         snprintf(attr, sizeof(attr), "mp4a.40.33");
     } else if (st->codecpar->codec_id == AV_CODEC_ID_MP3) {
@@ -2247,6 +2293,10 @@ static int hls_write_header(AVFormatContext *s)
                 continue;
             }
             avpriv_set_pts_info(outer_st, inner_st->pts_wrap_bits, inner_st->time_base.num, inner_st->time_base.den);
+            if (outer_st->codecpar->codec_id == AV_CODEC_ID_HEVC &&
+                outer_st->codecpar->codec_tag != MKTAG('h','v','c','1')) {
+                av_log(s, AV_LOG_WARNING, "Stream HEVC is not hvc1, you should use tag:v hvc1 to set it.\n");
+            }
             write_codec_attr(outer_st, vs);
 
         }
@@ -2398,9 +2448,9 @@ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
                 vs->duration = (double)(pkt->pts - vs->end_pts) * st->time_base.num / st->time_base.den;
             }
         }
-
     }
 
+    can_split = can_split && (pkt->pts - vs->end_pts > 0);
     if (vs->packets_written && can_split && av_compare_ts(pkt->pts - vs->start_pts, st->time_base,
                                                           end_pts, AV_TIME_BASE_Q) >= 0) {
         int64_t new_start_pos;
@@ -2572,13 +2622,14 @@ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
 
     vs->packets_written++;
     if (oc->pb) {
+        int64_t keyframe_pre_pos = avio_tell(oc->pb);
         ret = ff_write_chained(oc, stream_index, pkt, s, 0);
-        vs->video_keyframe_size += pkt->size;
-        if ((st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) && (pkt->flags & AV_PKT_FLAG_KEY)) {
-            vs->video_keyframe_size = avio_tell(oc->pb);
-        } else {
-            vs->video_keyframe_pos = avio_tell(vs->out);
+        if ((st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) &&
+            (pkt->flags & AV_PKT_FLAG_KEY) && !keyframe_pre_pos) {
+            av_write_frame(oc, NULL); /* Flush any buffered data */
+            vs->video_keyframe_size = avio_tell(oc->pb) - keyframe_pre_pos;
         }
+        vs->video_keyframe_pos = vs->start_pos;
         if (hls->ignore_io_errors)
             ret = 0;
     }

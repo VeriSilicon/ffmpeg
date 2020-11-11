@@ -25,6 +25,24 @@ version <next>:
 - AV1 decoder (Hardware acceleration used only)
 - SVS demuxer
 - Argonaut Games BRP demuxer
+- DAT demuxer
+- aax demuxer
+- IPU decoder, parser and demuxer
+- Intel QSV-accelerated AV1 decoding
+- Argonaut Games Video decoder
+- libwavpack encoder removed
+- ACE demuxer
+- AVS3 demuxer
+- AVS3 video decoder via libuavs3d
+- Cintel RAW decoder
+- VDPAU accelerated VP9 10/12bit decoding
+- afreqshift and aphaseshift filters
+- High Voltage Software ADPCM encoder
+- LEGO Racers ALP (.tun & .pcm) muxer
+- AV1 VAAPI decoder
+- adenorm filter
+- ADPCM IMA AMV encoder
+- AMV muxer
 
 
 version 4.3:

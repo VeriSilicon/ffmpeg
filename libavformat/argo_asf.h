@@ -26,6 +26,8 @@
 #include <stdint.h>
 #include "libavutil/common.h"
 
+#include "avformat.h"
+
 #define ASF_TAG                 MKTAG('A', 'S', 'F', '\0')
 #define ASF_FILE_HEADER_SIZE    24
 #define ASF_CHUNK_HEADER_SIZE   20
@@ -63,7 +65,7 @@ enum {
 void ff_argo_asf_parse_file_header(ArgoASFFileHeader *hdr, const uint8_t *buf);
 int  ff_argo_asf_validate_file_header(AVFormatContext *s, const ArgoASFFileHeader *hdr);
 void ff_argo_asf_parse_chunk_header(ArgoASFChunkHeader *hdr, const uint8_t *buf);
-int  ff_argo_asf_fill_stream(AVStream *st, const ArgoASFFileHeader *fhdr,
+int  ff_argo_asf_fill_stream(AVFormatContext *s, AVStream *st, const ArgoASFFileHeader *fhdr,
                              const ArgoASFChunkHeader *ckhdr);
 
 #endif /* AVFORMAT_ARGO_ASF_H */

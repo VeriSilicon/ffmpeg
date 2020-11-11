@@ -74,18 +74,14 @@ static av_cold int init_vlcs(TSCC2Context *c)
                                  tscc2_nc_vlc_bits[i],  1, 1,
                                  tscc2_nc_vlc_codes[i], 2, 2,
                                  tscc2_nc_vlc_syms,     1, 1, INIT_VLC_LE);
-        if (ret) {
-            free_vlcs(c);
+        if (ret)
             return ret;
-        }
         ret = ff_init_vlc_sparse(c->ac_vlc + i, 9, tscc2_ac_vlc_sizes[i],
                                  tscc2_ac_vlc_bits[i],  1, 1,
                                  tscc2_ac_vlc_codes[i], 2, 2,
                                  tscc2_ac_vlc_syms[i],  2, 2, INIT_VLC_LE);
-        if (ret) {
-            free_vlcs(c);
+        if (ret)
             return ret;
-        }
     }
 
     return 0;
@@ -155,8 +151,6 @@ static int tscc2_decode_mb(TSCC2Context *c, int *q, int vlc_set,
                 dc = get_bits(gb, 8);
             } else {
                 dc = get_vlc2(gb, c->dc_vlc.table, 9, 2);
-                if (dc == -1)
-                    return AVERROR_INVALIDDATA;
                 if (dc == 0x100)
                     dc = get_bits(gb, 8);
             }
@@ -165,15 +159,11 @@ static int tscc2_decode_mb(TSCC2Context *c, int *q, int vlc_set,
             c->block[0] = dc;
 
             nc = get_vlc2(gb, c->nc_vlc[vlc_set].table, 9, 1);
-            if (nc == -1)
-                return AVERROR_INVALIDDATA;
 
             bpos = 1;
             memset(c->block + 1, 0, 15 * sizeof(*c->block));
             for (l = 0; l < nc; l++) {
                 ac = get_vlc2(gb, c->ac_vlc[vlc_set].table, 9, 2);
-                if (ac == -1)
-                    return AVERROR_INVALIDDATA;
                 if (ac == 0x1000)
                     ac = get_bits(gb, 12);
                 bpos += ac & 0xF;
@@ -360,15 +350,12 @@ static av_cold int tscc2_decode_init(AVCodecContext *avctx)
     c->slice_quants = av_malloc(c->mb_width * c->mb_height);
     if (!c->slice_quants) {
         av_log(avctx, AV_LOG_ERROR, "Cannot allocate slice information\n");
-        free_vlcs(c);
         return AVERROR(ENOMEM);
     }
 
     c->pic = av_frame_alloc();
-    if (!c->pic) {
-        tscc2_decode_end(avctx);
+    if (!c->pic)
         return AVERROR(ENOMEM);
-    }
 
     return 0;
 }
@@ -383,4 +370,5 @@ AVCodec ff_tscc2_decoder = {
     .close          = tscc2_decode_end,
     .decode         = tscc2_decode_frame,
     .capabilities   = AV_CODEC_CAP_DR1,
+    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
 };

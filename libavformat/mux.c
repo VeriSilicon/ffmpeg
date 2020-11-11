@@ -595,13 +595,13 @@ static int compute_muxer_pkt_fields(AVFormatContext *s, AVStream *st, AVPacket *
 
     //calculate dts from pts
     if (pkt->pts != AV_NOPTS_VALUE && pkt->dts == AV_NOPTS_VALUE && delay <= MAX_REORDER_DELAY) {
-        st->pts_buffer[0] = pkt->pts;
-        for (i = 1; i < delay + 1 && st->pts_buffer[i] == AV_NOPTS_VALUE; i++)
-            st->pts_buffer[i] = pkt->pts + (i - delay - 1) * pkt->duration;
-        for (i = 0; i<delay && st->pts_buffer[i] > st->pts_buffer[i + 1]; i++)
-            FFSWAP(int64_t, st->pts_buffer[i], st->pts_buffer[i + 1]);
+        st->internal->pts_buffer[0] = pkt->pts;
+        for (i = 1; i < delay + 1 && st->internal->pts_buffer[i] == AV_NOPTS_VALUE; i++)
+            st->internal->pts_buffer[i] = pkt->pts + (i - delay - 1) * pkt->duration;
+        for (i = 0; i<delay && st->internal->pts_buffer[i] > st->internal->pts_buffer[i + 1]; i++)
+            FFSWAP(int64_t, st->internal->pts_buffer[i], st->internal->pts_buffer[i + 1]);
 
-        pkt->dts = st->pts_buffer[0];
+        pkt->dts = st->internal->pts_buffer[0];
     }
 
     if (st->cur_dts && st->cur_dts != AV_NOPTS_VALUE &&
@@ -678,7 +678,7 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
 
     if (s->avoid_negative_ts > 0) {
         AVStream *st = s->streams[pkt->stream_index];
-        int64_t offset = st->mux_ts_offset;
+        int64_t offset = st->internal->mux_ts_offset;
         int64_t ts = s->internal->avoid_negative_ts_use_pts ? pkt->pts : pkt->dts;
 
         if (s->internal->offset == AV_NOPTS_VALUE && ts != AV_NOPTS_VALUE &&
@@ -688,7 +688,7 @@ static int write_packet(AVFormatContext *s, AVPacket *pkt)
         }
 
         if (s->internal->offset != AV_NOPTS_VALUE && !offset) {
-            offset = st->mux_ts_offset =
+            offset = st->internal->mux_ts_offset =
                 av_rescale_q_rnd(s->internal->offset,
                                  s->internal->offset_timebase,
                                  st->time_base,
@@ -831,27 +831,27 @@ int ff_interleave_add_packet(AVFormatContext *s, AVPacket *pkt,
     av_packet_move_ref(&this_pktl->pkt, pkt);
     pkt = &this_pktl->pkt;
 
-    if (st->last_in_packet_buffer) {
-        next_point = &(st->last_in_packet_buffer->next);
+    if (st->internal->last_in_packet_buffer) {
+        next_point = &(st->internal->last_in_packet_buffer->next);
     } else {
         next_point = &s->internal->packet_buffer;
     }
 
     if (chunked) {
         uint64_t max= av_rescale_q_rnd(s->max_chunk_duration, AV_TIME_BASE_Q, st->time_base, AV_ROUND_UP);
-        st->interleaver_chunk_size     += pkt->size;
-        st->interleaver_chunk_duration += pkt->duration;
-        if (   (s->max_chunk_size && st->interleaver_chunk_size > s->max_chunk_size)
-            || (max && st->interleaver_chunk_duration           > max)) {
-            st->interleaver_chunk_size = 0;
+        st->internal->interleaver_chunk_size     += pkt->size;
+        st->internal->interleaver_chunk_duration += pkt->duration;
+        if (   (s->max_chunk_size && st->internal->interleaver_chunk_size > s->max_chunk_size)
+            || (max && st->internal->interleaver_chunk_duration           > max)) {
+            st->internal->interleaver_chunk_size = 0;
             pkt->flags |= CHUNK_START;
-            if (max && st->interleaver_chunk_duration > max) {
+            if (max && st->internal->interleaver_chunk_duration > max) {
                 int64_t syncoffset = (st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)*max/2;
                 int64_t syncto = av_rescale(pkt->dts + syncoffset, 1, max)*max - syncoffset;
 
-                st->interleaver_chunk_duration += (pkt->dts - syncto)/8 - max;
+                st->internal->interleaver_chunk_duration += (pkt->dts - syncto)/8 - max;
             } else
-                st->interleaver_chunk_duration = 0;
+                st->internal->interleaver_chunk_duration = 0;
         }
     }
     if (*next_point) {
@@ -876,7 +876,7 @@ next_non_null:
 
     this_pktl->next = *next_point;
 
-    st->last_in_packet_buffer = *next_point = this_pktl;
+    st->internal->last_in_packet_buffer = *next_point = this_pktl;
 
     return 0;
 }
@@ -926,7 +926,7 @@ int ff_interleave_packet_per_dts(AVFormatContext *s, AVPacket *out,
     }
 
     for (i = 0; i < s->nb_streams; i++) {
-        if (s->streams[i]->last_in_packet_buffer) {
+        if (s->streams[i]->internal->last_in_packet_buffer) {
             ++stream_count;
         } else if (s->streams[i]->codecpar->codec_type != AVMEDIA_TYPE_ATTACHMENT &&
                    s->streams[i]->codecpar->codec_id != AV_CODEC_ID_VP8 &&
@@ -951,7 +951,7 @@ int ff_interleave_packet_per_dts(AVFormatContext *s, AVPacket *out,
 
         for (i = 0; i < s->nb_streams; i++) {
             int64_t last_dts;
-            const AVPacketList *last = s->streams[i]->last_in_packet_buffer;
+            const AVPacketList *last = s->streams[i]->internal->last_in_packet_buffer;
 
             if (!last)
                 continue;
@@ -1000,8 +1000,8 @@ int ff_interleave_packet_per_dts(AVFormatContext *s, AVPacket *out,
             if (!s->internal->packet_buffer)
                 s->internal->packet_buffer_end = NULL;
 
-            if (st->last_in_packet_buffer == pktl)
-                st->last_in_packet_buffer = NULL;
+            if (st->internal->last_in_packet_buffer == pktl)
+                st->internal->last_in_packet_buffer = NULL;
 
             av_packet_unref(&pktl->pkt);
             av_freep(&pktl);
@@ -1019,8 +1019,8 @@ int ff_interleave_packet_per_dts(AVFormatContext *s, AVPacket *out,
         if (!s->internal->packet_buffer)
             s->internal->packet_buffer_end = NULL;
 
-        if (st->last_in_packet_buffer == pktl)
-            st->last_in_packet_buffer = NULL;
+        if (st->internal->last_in_packet_buffer == pktl)
+            st->internal->last_in_packet_buffer = NULL;
         av_freep(&pktl);
 
         return 1;
@@ -1038,7 +1038,7 @@ int ff_interleaved_peek(AVFormatContext *s, int stream,
             *pkt = pktl->pkt;
             if (add_offset) {
                 AVStream *st = s->streams[pkt->stream_index];
-                int64_t offset = st->mux_ts_offset;
+                int64_t offset = st->internal->mux_ts_offset;
 
                 if (s->output_ts_offset)
                     offset += av_rescale_q(s->output_ts_offset, AV_TIME_BASE_Q, st->time_base);
@@ -1285,7 +1285,7 @@ int av_write_trailer(AVFormatContext *s)
        ret = s->pb ? s->pb->error : 0;
     for (i = 0; i < s->nb_streams; i++) {
         av_freep(&s->streams[i]->priv_data);
-        av_freep(&s->streams[i]->index_entries);
+        av_freep(&s->streams[i]->internal->index_entries);
     }
     if (s->oformat->priv_class)
         av_opt_free(s->priv_data);

@@ -140,7 +140,7 @@ static void add_keyframes_index(AVFormatContext *s)
     av_assert0(flv->last_keyframe_stream_index <= s->nb_streams);
     stream = s->streams[flv->last_keyframe_stream_index];
 
-    if (stream->nb_index_entries == 0) {
+    if (stream->internal->nb_index_entries == 0) {
         for (i = 0; i < flv->keyframe_count; i++) {
             av_log(s, AV_LOG_TRACE, "keyframe filepositions = %"PRId64" times = %"PRId64"\n",
                    flv->keyframe_filepositions[i], flv->keyframe_times[i] * 1000);
@@ -495,6 +495,8 @@ static int amf_parse_object(AVFormatContext *s, AVStream *astream,
 
     num_val  = 0;
     ioc      = s->pb;
+    if (avio_feof(ioc))
+        return AVERROR_EOF;
     amf_type = avio_r8(ioc);
 
     switch (amf_type) {
@@ -715,7 +717,7 @@ static int flv_read_metabody(AVFormatContext *s, int64_t next_pos)
     if (!strcmp(buffer, "onCaptionInfo"))
         return TYPE_ONCAPTIONINFO;
 
-    if (strcmp(buffer, "onMetaData") && strcmp(buffer, "onCuePoint")) {
+    if (strcmp(buffer, "onMetaData") && strcmp(buffer, "onCuePoint") && strcmp(buffer, "|RtmpSampleAccess")) {
         av_log(s, AV_LOG_DEBUG, "Unknown type %s\n", buffer);
         return TYPE_UNKNOWN;
     }
@@ -828,10 +830,10 @@ static void clear_index_entries(AVFormatContext *s, int64_t pos)
         AVStream *st = s->streams[i];
         /* Remove all index entries that point to >= pos */
         out = 0;
-        for (j = 0; j < st->nb_index_entries; j++)
-            if (st->index_entries[j].pos < pos)
-                st->index_entries[out++] = st->index_entries[j];
-        st->nb_index_entries = out;
+        for (j = 0; j < st->internal->nb_index_entries; j++)
+            if (st->internal->index_entries[j].pos < pos)
+                st->internal->index_entries[out++] = st->internal->index_entries[j];
+        st->internal->nb_index_entries = out;
     }
 }
 

@@ -195,7 +195,7 @@ static int on2avc_decode_quads(On2AVCContext *c, GetBitContext *gb, float *dst,
     int i, j, val, val1;
 
     for (i = 0; i < dst_size; i += 4) {
-        val = get_vlc2(gb, c->cb_vlc[type].table, 9, 3);
+        val = get_vlc2(gb, c->cb_vlc[type].table, 9, 2);
 
         for (j = 0; j < 4; j++) {
             val1 = sign_extend((val >> (12 - j * 4)) & 0xF, 4);
@@ -228,7 +228,7 @@ static int on2avc_decode_pairs(On2AVCContext *c, GetBitContext *gb, float *dst,
     int i, val, val1, val2, sign;
 
     for (i = 0; i < dst_size; i += 2) {
-        val = get_vlc2(gb, c->cb_vlc[type].table, 9, 3);
+        val = get_vlc2(gb, c->cb_vlc[type].table, 9, 2);
 
         val1 = sign_extend(val >> 8,   8);
         val2 = sign_extend(val & 0xFF, 8);
@@ -961,21 +961,12 @@ static av_cold int on2avc_decode_init(AVCodecContext *avctx)
                  ff_on2avc_scale_diff_codes, 4, 4, 0)) {
         goto vlc_fail;
     }
-    for (i = 1; i < 9; i++) {
-        int idx = i - 1;
-        if (ff_init_vlc_sparse(&c->cb_vlc[i], 9, ff_on2avc_quad_cb_elems[idx],
-                               ff_on2avc_quad_cb_bits[idx],  1, 1,
-                               ff_on2avc_quad_cb_codes[idx], 4, 4,
-                               ff_on2avc_quad_cb_syms[idx],  2, 2, 0)) {
-            goto vlc_fail;
-        }
-    }
-    for (i = 9; i < 16; i++) {
-        int idx = i - 9;
-        if (ff_init_vlc_sparse(&c->cb_vlc[i], 9, ff_on2avc_pair_cb_elems[idx],
-                               ff_on2avc_pair_cb_bits[idx],  1, 1,
-                               ff_on2avc_pair_cb_codes[idx], 2, 2,
-                               ff_on2avc_pair_cb_syms[idx],  2, 2, 0)) {
+    for (i = 1; i < 16; i++) {
+        int idx = i - 1, codes_size = ff_on2avc_cb_codes_sizes[idx];
+        if (ff_init_vlc_sparse(&c->cb_vlc[i], 9, ff_on2avc_cb_elems[idx],
+                               ff_on2avc_cb_bits[idx],  1, 1,
+                               ff_on2avc_cb_codes[idx], codes_size, codes_size,
+                               ff_on2avc_cb_syms[idx],  2, 2, 0)) {
             goto vlc_fail;
         }
     }
@@ -983,8 +974,6 @@ static av_cold int on2avc_decode_init(AVCodecContext *avctx)
     return 0;
 vlc_fail:
     av_log(avctx, AV_LOG_ERROR, "Cannot init VLC\n");
-    on2avc_free_vlcs(c);
-    av_freep(&c->fdsp);
     return AVERROR(ENOMEM);
 }
 

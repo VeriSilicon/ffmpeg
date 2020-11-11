@@ -26,6 +26,9 @@
 #include "libavutil/opt.h"
 #include "argo_asf.h"
 
+/* Maximum number of blocks to read at once. */
+#define ASF_NB_BLOCKS 32
+
 typedef struct ArgoASFDemuxContext {
     ArgoASFFileHeader   fhdr;
     ArgoASFChunkHeader  ckhdr;
@@ -37,6 +40,7 @@ typedef struct ArgoASFMuxContext {
     int            version_major;
     int            version_minor;
     const char    *name;
+    int64_t        nb_blocks;
 } ArgoASFMuxContext;
 
 void ff_argo_asf_parse_file_header(ArgoASFFileHeader *hdr, const uint8_t *buf)
@@ -55,11 +59,6 @@ int ff_argo_asf_validate_file_header(AVFormatContext *s, const ArgoASFFileHeader
     if (hdr->magic != ASF_TAG || hdr->num_chunks == 0)
         return AVERROR_INVALIDDATA;
 
-    if (hdr->num_chunks > 1) {
-        avpriv_request_sample(s, ">1 chunk");
-        return AVERROR_PATCHWELCOME;
-    }
-
     if (hdr->chunk_offset < ASF_FILE_HEADER_SIZE)
         return AVERROR_INVALIDDATA;
 
@@ -76,17 +75,17 @@ void ff_argo_asf_parse_chunk_header(ArgoASFChunkHeader *hdr, const uint8_t *buf)
     hdr->flags          = AV_RL32(buf + 16);
 }
 
-int ff_argo_asf_fill_stream(AVStream *st, const ArgoASFFileHeader *fhdr,
+int ff_argo_asf_fill_stream(AVFormatContext *s, AVStream *st, const ArgoASFFileHeader *fhdr,
                             const ArgoASFChunkHeader *ckhdr)
 {
     if (ckhdr->num_samples != ASF_SAMPLE_COUNT) {
-        av_log(st, AV_LOG_ERROR, "Invalid sample count. Got %u, expected %d\n",
+        av_log(s, AV_LOG_ERROR, "Invalid sample count. Got %u, expected %d\n",
                ckhdr->num_samples, ASF_SAMPLE_COUNT);
         return AVERROR_INVALIDDATA;
     }
 
     if ((ckhdr->flags & ASF_CF_ALWAYS1) != ASF_CF_ALWAYS1 || (ckhdr->flags & ASF_CF_ALWAYS0) != 0) {
-        avpriv_request_sample(st, "Nonstandard flags (0x%08X)", ckhdr->flags);
+        avpriv_request_sample(s, "Nonstandard flags (0x%08X)", ckhdr->flags);
         return AVERROR_PATCHWELCOME;
     }
 
@@ -117,7 +116,7 @@ int ff_argo_asf_fill_stream(AVStream *st, const ArgoASFFileHeader *fhdr,
 
     if (st->codecpar->bits_per_raw_sample != 16) {
         /* The header allows for these, but I've never seen any files with them. */
-        avpriv_request_sample(st, "Non 16-bit samples");
+        avpriv_request_sample(s, "Non 16-bit samples");
         return AVERROR_PATCHWELCOME;
     }
 
@@ -125,11 +124,9 @@ int ff_argo_asf_fill_stream(AVStream *st, const ArgoASFFileHeader *fhdr,
      * (nchannel control bytes) + ((bytes_per_channel) * nchannel)
      * For mono, this is 17. For stereo, this is 34.
      */
-    st->codecpar->frame_size            = st->codecpar->channels +
+    st->codecpar->block_align           = st->codecpar->channels +
                                           (ckhdr->num_samples / 2) *
                                           st->codecpar->channels;
-
-    st->codecpar->block_align           = st->codecpar->frame_size;
 
     st->codecpar->bit_rate              = st->codecpar->channels *
                                           st->codecpar->sample_rate *
@@ -137,8 +134,12 @@ int ff_argo_asf_fill_stream(AVStream *st, const ArgoASFFileHeader *fhdr,
 
     avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
     st->start_time      = 0;
-    st->duration        = ckhdr->num_blocks * ckhdr->num_samples;
-    st->nb_frames       = ckhdr->num_blocks;
+
+    if (fhdr->num_chunks == 1) {
+        st->duration        = ckhdr->num_blocks * ckhdr->num_samples;
+        st->nb_frames       = ckhdr->num_blocks;
+    }
+
     return 0;
 }
 
@@ -197,6 +198,10 @@ static int argo_asf_read_header(AVFormatContext *s)
     if ((ret = ff_argo_asf_validate_file_header(s, &asf->fhdr)) < 0)
         return ret;
 
+    /* This should only be 1 in ASF files. >1 is fine if in BRP. */
+    if (asf->fhdr.num_chunks != 1)
+        return AVERROR_INVALIDDATA;
+
     if ((ret = avio_skip(pb, asf->fhdr.chunk_offset - ASF_FILE_HEADER_SIZE)) < 0)
         return ret;
 
@@ -207,7 +212,7 @@ static int argo_asf_read_header(AVFormatContext *s)
 
     ff_argo_asf_parse_chunk_header(&asf->ckhdr, buf);
 
-    return ff_argo_asf_fill_stream(st, &asf->fhdr, &asf->ckhdr);
+    return ff_argo_asf_fill_stream(s, st, &asf->fhdr, &asf->ckhdr);
 }
 
 static int argo_asf_read_packet(AVFormatContext *s, AVPacket *pkt)
@@ -221,15 +226,43 @@ static int argo_asf_read_packet(AVFormatContext *s, AVPacket *pkt)
     if (asf->blocks_read >= asf->ckhdr.num_blocks)
         return AVERROR_EOF;
 
-    if ((ret = av_get_packet(pb, pkt, st->codecpar->frame_size)) < 0)
+    ret = av_get_packet(pb, pkt, st->codecpar->block_align *
+                        FFMIN(ASF_NB_BLOCKS, asf->ckhdr.num_blocks - asf->blocks_read));
+    if (ret < 0)
         return ret;
-    else if (ret != st->codecpar->frame_size)
+
+    /* Something real screwy is going on. */
+    if (ret % st->codecpar->block_align != 0)
         return AVERROR_INVALIDDATA;
 
-    pkt->stream_index   = st->index;
-    pkt->duration       = asf->ckhdr.num_samples;
 
-    ++asf->blocks_read;
+    pkt->stream_index   = st->index;
+    pkt->duration       = asf->ckhdr.num_samples * (ret / st->codecpar->block_align);
+    pkt->pts            = asf->blocks_read * asf->ckhdr.num_samples;
+    asf->blocks_read   += (ret / st->codecpar->block_align);
+
+    pkt->flags &= ~AV_PKT_FLAG_CORRUPT;
+    return 0;
+}
+
+static int argo_asf_seek(AVFormatContext *s, int stream_index,
+                         int64_t pts, int flags)
+{
+    ArgoASFDemuxContext *asf = s->priv_data;
+    AVStream *st             = s->streams[stream_index];
+    int64_t offset;
+    uint32_t block = pts / asf->ckhdr.num_samples;
+
+    if (block >= asf->ckhdr.num_blocks)
+        return -1;
+
+    offset = asf->fhdr.chunk_offset + ASF_CHUNK_HEADER_SIZE +
+             (block * st->codecpar->block_align);
+
+    if ((offset = avio_seek(s->pb, offset, SEEK_SET)) < 0)
+        return offset;
+
+    asf->blocks_read = block;
     return 0;
 }
 
@@ -244,7 +277,8 @@ AVInputFormat ff_argo_asf_demuxer = {
     .priv_data_size = sizeof(ArgoASFDemuxContext),
     .read_probe     = argo_asf_probe,
     .read_header    = argo_asf_read_header,
-    .read_packet    = argo_asf_read_packet
+    .read_packet    = argo_asf_read_packet,
+    .read_seek      = argo_asf_seek,
 };
 #endif
 
@@ -276,6 +310,9 @@ static int argo_asf_write_init(AVFormatContext *s)
         av_log(s, AV_LOG_ERROR, "ASF files only support up to 2 channels\n");
         return AVERROR(EINVAL);
     }
+
+    if (par->block_align != 17 * par->channels)
+        return AVERROR(EINVAL);
 
     if (par->sample_rate > UINT16_MAX) {
         av_log(s, AV_LOG_ERROR, "Sample rate too large\n");
@@ -314,14 +351,15 @@ static int argo_asf_write_header(AVFormatContext *s)
 {
     const AVCodecParameters  *par = s->streams[0]->codecpar;
     ArgoASFMuxContext        *ctx = s->priv_data;
-    ArgoASFFileHeader  fhdr;
     ArgoASFChunkHeader chdr;
+    ArgoASFFileHeader  fhdr = {
+        .magic         = ASF_TAG,
+        .version_major = (uint16_t)ctx->version_major,
+        .version_minor = (uint16_t)ctx->version_minor,
+        .num_chunks    = 1,
+        .chunk_offset  = ASF_FILE_HEADER_SIZE
+    };
 
-    fhdr.magic         = ASF_TAG;
-    fhdr.version_major = (uint16_t)ctx->version_major;
-    fhdr.version_minor = (uint16_t)ctx->version_minor;
-    fhdr.num_chunks    = 1;
-    fhdr.chunk_offset  = ASF_FILE_HEADER_SIZE;
     /*
      * If the user specified a name, use it as is. Otherwise take the
      * basename and lop off the extension (if any).
@@ -333,7 +371,7 @@ static int argo_asf_write_header(AVFormatContext *s)
         const char *end   = strrchr(start, '.');
         size_t      len;
 
-        if(end)
+        if (end)
             len = end - start;
         else
             len = strlen(start);
@@ -363,24 +401,31 @@ static int argo_asf_write_header(AVFormatContext *s)
 
 static int argo_asf_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
-    if (pkt->size != 17 * s->streams[0]->codecpar->channels)
+    ArgoASFMuxContext *ctx = s->priv_data;
+    AVCodecParameters *par = s->streams[0]->codecpar;
+    int nb_blocks = pkt->size / par->block_align;
+
+    if (pkt->size % par->block_align != 0)
         return AVERROR_INVALIDDATA;
 
-    if (s->streams[0]->nb_frames >= UINT32_MAX)
+    if (ctx->nb_blocks + nb_blocks > UINT32_MAX)
         return AVERROR_INVALIDDATA;
 
     avio_write(s->pb, pkt->data, pkt->size);
+
+    ctx->nb_blocks += nb_blocks;
     return 0;
 }
 
 static int argo_asf_write_trailer(AVFormatContext *s)
 {
+    ArgoASFMuxContext *ctx = s->priv_data;
     int64_t ret;
 
     if ((ret = avio_seek(s->pb, ASF_FILE_HEADER_SIZE, SEEK_SET) < 0))
         return ret;
 
-    avio_wl32(s->pb, (uint32_t)s->streams[0]->nb_frames);
+    avio_wl32(s->pb, (uint32_t)ctx->nb_blocks);
     return 0;
 }
 
