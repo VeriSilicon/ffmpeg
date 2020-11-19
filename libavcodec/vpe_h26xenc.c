@@ -217,6 +217,10 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     }
     enc_ctx->h26x_enc_cfg.frame_ctx = frame_hwctx;
 
+    enc_ctx->h26x_enc_cfg.colour_primaries         = avctx->color_primaries;
+    enc_ctx->h26x_enc_cfg.transfer_characteristics = avctx->color_trc;
+    enc_ctx->h26x_enc_cfg.matrix_coeffs            = avctx->colorspace;
+
     ret = vpe_h26x_encode_create_param_list(avctx, enc_ctx->enc_params,
                                             &enc_ctx->h26x_enc_cfg);
     if (ret != 0) {

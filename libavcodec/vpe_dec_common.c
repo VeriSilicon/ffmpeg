@@ -532,7 +532,7 @@ const AVOption vpe_decode_options[] = {
       "set output number and at most four output downscale configuration",
       OFFSET(pp_setting),
       AV_OPT_TYPE_STRING,
-      { .str = "" },
+      { .str = NULL },
       0,
       0,
       VD },
