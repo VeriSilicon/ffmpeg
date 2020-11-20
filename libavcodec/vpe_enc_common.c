@@ -147,6 +147,7 @@ static void vpe_enc_input_frame(AVFrame *input_image,
         out_frame->data[0]     = in_vpi_frame->data[0];
         out_frame->data[1]     = in_vpi_frame->data[1];
         out_frame->data[2]     = in_vpi_frame->data[2];
+        out_frame->color_range = input_image->color_range;
         out_frame->opaque      = (void *)input_image;
         out_frame->vpi_opaque  = (void *)in_vpi_frame;
     } else {
@@ -317,6 +318,7 @@ static void vpe_enc_output_packet(VpiPacket *vpi_packet,
     out_packet->size = vpi_packet->size;
     out_packet->pts  = vpi_packet->pts;
     out_packet->dts  = vpi_packet->pkt_dts;
+    out_packet->flags = vpi_packet->flags;
 }
 
 /**

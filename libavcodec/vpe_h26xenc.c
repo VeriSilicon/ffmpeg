@@ -153,6 +153,10 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     h26x_enc_cfg->transfer_characteristics = avctx->color_trc;
     h26x_enc_cfg->matrix_coeffs            = avctx->colorspace;
 
+    h26x_enc_cfg->color_range       = avctx->color_range;
+    h26x_enc_cfg->aspect_ratio_num  = avctx->sample_aspect_ratio.num;
+    h26x_enc_cfg->aspect_ration_den = avctx->sample_aspect_ratio.den;
+
     /*Call the VPE h26x encoder initialization function*/
     ret = enc_ctx->vpi->init(enc_ctx->ctx, h26x_enc_cfg);
     if (ret < 0) {
