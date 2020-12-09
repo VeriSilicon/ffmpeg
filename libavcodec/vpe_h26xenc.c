@@ -29,6 +29,7 @@
 #include "libavcodec/internal.h"
 #include "libavutil/hwcontext_vpe.h"
 #include "hwconfig.h"
+#include "libavutil/time.h"
 
 typedef struct VpeH26xEncFrm {
     /*The state of used or not*/
@@ -284,66 +285,6 @@ static void vpe_h26xenc_input_frame(AVFrame *input_image,
     }
 }
 
-static int vpe_h26x_encode_receive_pic(AVCodecContext *avctx)
-{
-    int i                   = 0;
-    int ret                 = 0;
-    VpeH26xEncFrm *transpic = NULL;
-    VpeH26xEncCtx *enc_ctx  = (VpeH26xEncCtx *)avctx->priv_data;
-    VpiFrame *vpi_frame     = NULL;
-    AVFrame *frame          = enc_ctx->frame;
-    VpiCtrlCmdParam cmd;
-
-    cmd.cmd  = VPI_CMD_H26xENC_GET_EMPTY_FRAME_SLOT;
-    cmd.data = NULL;
-    ret = enc_ctx->api->control(enc_ctx->ctx,
-                    (void*)&cmd, (void *)&vpi_frame);
-    if (ret != 0 || vpi_frame == NULL) {
-        return AVERROR_EXTERNAL;
-    }
-
-    for (i = 0; i < MAX_WAIT_DEPTH; i++) {
-        if (enc_ctx->pic_wait_list[i].state == 0) {
-            transpic = &enc_ctx->pic_wait_list[i];
-            break;
-        }
-    }
-
-    if (i == MAX_WAIT_DEPTH) {
-        return AVERROR_BUFFER_TOO_SMALL;
-    }
-
-    if (!frame->buf[0]) {
-        ret = ff_encode_get_frame(avctx, frame);
-        if (ret < 0 && ret != AVERROR_EOF)
-            return ret;
-    }
-    if (ret == AVERROR_EOF)
-        frame = NULL;
-
-    transpic->state = 1;
-    if (frame) {
-        if (!transpic->frame) {
-            transpic->frame = av_frame_alloc();
-            if (!transpic->frame)
-                return AVERROR(ENOMEM);
-        }
-        av_frame_unref(transpic->frame);
-        av_frame_move_ref(transpic->frame, frame);
-        vpe_h26xenc_input_frame(transpic->frame, vpi_frame);
-    } else {
-        av_log(enc_ctx, AV_LOG_DEBUG, "input image is empty, received EOF\n");
-        vpe_h26xenc_input_frame(NULL, vpi_frame);
-        enc_ctx->eof = 1;
-    }
-
-    ret = enc_ctx->api->encode_put_frame(enc_ctx->ctx, (void*)vpi_frame);
-    if (ret) {
-        return AVERROR_EXTERNAL;
-    }
-    return 0;
-}
-
 static int vpe_h26xenc_consume_pic(AVCodecContext *avctx,
                                        VpeH26xEncCtx *ctx,
                                        AVFrame *consume_frame)
@@ -397,6 +338,72 @@ static av_cold int vpe_h26xenc_free_frames(AVCodecContext *avctx)
     return 0;
 }
 
+static int vpe_h26x_encode_receive_pic(AVCodecContext *avctx)
+{
+    int i                   = 0;
+    int ret                 = 0;
+    VpeH26xEncFrm *transpic = NULL;
+    VpeH26xEncCtx *enc_ctx  = (VpeH26xEncCtx *)avctx->priv_data;
+    VpiFrame *vpi_frame     = NULL;
+    AVFrame *frame          = enc_ctx->frame;
+    VpiCtrlCmdParam cmd;
+
+    do {
+        for (i = 0; i < MAX_WAIT_DEPTH; i++) {
+            if (enc_ctx->pic_wait_list[i].state == 0) {
+                transpic = &enc_ctx->pic_wait_list[i];
+                break;
+            }
+        }
+
+        if (i == MAX_WAIT_DEPTH) {
+            av_usleep(500);
+            vpe_h26xenc_free_frames(avctx);
+        } else {
+            break;
+        }
+    } while (1);
+
+    if (!frame->buf[0]) {
+        ret = ff_encode_get_frame(avctx, frame);
+        if (ret < 0 && ret != AVERROR_EOF) {
+            return ret;
+        }
+    }
+    if (ret == AVERROR_EOF)
+        frame = NULL;
+
+    transpic->state = 1;
+
+    cmd.cmd  = VPI_CMD_H26xENC_GET_EMPTY_FRAME_SLOT;
+    cmd.data = NULL;
+    ret = enc_ctx->api->control(enc_ctx->ctx,
+                    (void*)&cmd, (void *)&vpi_frame);
+    if (ret != 0 || vpi_frame == NULL) {
+        return AVERROR_EXTERNAL;
+    }
+    if (frame) {
+        if (!transpic->frame) {
+            transpic->frame = av_frame_alloc();
+            if (!transpic->frame)
+                return AVERROR(ENOMEM);
+        }
+        av_frame_unref(transpic->frame);
+        av_frame_move_ref(transpic->frame, frame);
+        vpe_h26xenc_input_frame(transpic->frame, vpi_frame);
+    } else {
+        av_log(enc_ctx, AV_LOG_DEBUG, "input image is empty, received EOF\n");
+        vpe_h26xenc_input_frame(NULL, vpi_frame);
+        enc_ctx->eof = 1;
+    }
+
+    ret = enc_ctx->api->encode_put_frame(enc_ctx->ctx, (void*)vpi_frame);
+    if (ret) {
+        return AVERROR_EXTERNAL;
+    }
+    return 0;
+}
+
 static void vpe_h26xenc_output_packet(VpiPacket *vpi_packet,
                                       AVPacket *out_packet)
 {
@@ -438,7 +445,7 @@ static int vpe_h26x_encode_receive_packet(AVCodecContext *avctx,
     /*Allocate AVPacket bufffer*/
     ret = av_new_packet(avpkt, stream_size);
     if (ret != 0)
-       return ret;
+        return ret;
 
     vpi_packet.data = avpkt->data;
     vpi_packet.size = stream_size;
