@@ -21,7 +21,6 @@
 
 #include "hwconfig.h"
 #include "internal.h"
-#include "libavutil/pixfmt.h"
 
 #include "vpe_dec_common.h"
 

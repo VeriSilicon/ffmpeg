@@ -27,13 +27,8 @@
 #include <vpe/vpi_api.h>
 #include <vpe/vpi_types.h>
 
-#include "avcodec.h"
-#include "libavutil/log.h"
-#include "libavutil/hwcontext.h"
+#include "decode.h"
 #include "libavutil/hwcontext_vpe.h"
-#include "libavutil/buffer.h"
-#include "libavutil/error.h"
-#include "libavutil/frame.h"
 #include "libavutil/opt.h"
 
 extern const AVOption vpe_decode_options[];

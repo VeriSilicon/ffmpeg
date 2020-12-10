@@ -19,10 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/pixfmt.h"
-#include "decode.h"
 #include "internal.h"
-
 #include "vpe_dec_common.h"
 
 /**
@@ -91,7 +88,7 @@ int ff_vpe_decode_init(AVCodecContext *avctx, VpiPlugin type)
     AVVpeFramesContext *vpeframe_ctx;
     AVHWDeviceContext *hwdevice_ctx;
     AVVpeDeviceContext *vpedev_ctx;
-    VpeDecCtx *dec_ctx = avctx->priv_data;
+    VpeDecCtx *dec_ctx = (VpeDecCtx *)avctx->priv_data;
     VpiCtrlCmdParam cmd_param;
     int ret;
 
@@ -117,7 +114,8 @@ int ff_vpe_decode_init(AVCodecContext *avctx, VpiPlugin type)
 
     // get the decoder init option struct
     cmd_param.cmd = VPI_CMD_DEC_INIT_OPTION;
-    ret = dec_ctx->vpi->control(dec_ctx->ctx, (void *)&cmd_param, (void *)&dec_ctx->dec_setting);
+    ret = dec_ctx->vpi->control(dec_ctx->ctx, (void *)&cmd_param,
+                                (void *)&dec_ctx->dec_setting);
     if (ret != 0) {
         return AVERROR(ENOMEM);
     }
@@ -141,10 +139,11 @@ int ff_vpe_decode_init(AVCodecContext *avctx, VpiPlugin type)
     }
 
     // get the packet buffer struct info from external decoder
-    // to store the avpk buf info
+    // to store the avpkt buf info
     cmd_param.cmd = VPI_CMD_DEC_GET_STRM_BUF_PKT;
-    ret = dec_ctx->vpi->control(dec_ctx->ctx, (void *)&cmd_param, (void *)&dec_ctx->buffered_pkt);
-    if (ret != 0) {
+    ret = dec_ctx->vpi->control(dec_ctx->ctx, (void *)&cmd_param,
+                                (void *)&dec_ctx->buffered_pkt);
+    if (ret) {
         return AVERROR(ENOMEM);
     }
 
@@ -172,13 +171,13 @@ static void vpe_clear_unused_frames(VpeDecCtx *dec_ctx)
 /**
  * alloc frame from hwcontext for external codec
  */
-static int vpe_alloc_frame(AVCodecContext *avctx, VpeDecCtx *dec_ctx, VpeDecFrame *dec_frame)
+static int vpe_alloc_frame(AVCodecContext *avctx, VpeDecFrame *dec_frame)
 {
     int ret;
 
     ret = ff_get_buffer(avctx, dec_frame->av_frame, AV_GET_BUFFER_FLAG_REF);
     if (ret < 0) {
-        av_log(NULL, AV_LOG_DEBUG, "return ret %d\n", ret);
+        av_log(avctx, AV_LOG_ERROR, "return ret %d\n", ret);
         return ret;
     }
 
@@ -191,8 +190,9 @@ static int vpe_alloc_frame(AVCodecContext *avctx, VpeDecCtx *dec_ctx, VpeDecFram
 /**
  * get frame from the linked list
  */
-static int vpe_get_frame(AVCodecContext *avctx, VpeDecCtx *dec_ctx, VpiFrame **vpi_frame)
+static int vpe_get_frame(AVCodecContext *avctx, VpiFrame **vpi_frame)
 {
+    VpeDecCtx *dec_ctx = (VpeDecCtx *)avctx->priv_data;
     VpeDecFrame *dec_frame, **last;
     int ret;
 
@@ -202,7 +202,7 @@ static int vpe_get_frame(AVCodecContext *avctx, VpeDecCtx *dec_ctx, VpiFrame **v
     last      = &dec_ctx->frame_list;
     while (dec_frame) {
         if (!dec_frame->used) {
-            ret = vpe_alloc_frame(avctx, dec_ctx, dec_frame);
+            ret = vpe_alloc_frame(avctx, dec_frame);
             if (ret < 0)
                 return ret;
             *vpi_frame = dec_frame->vpi_frame;
@@ -223,7 +223,7 @@ static int vpe_get_frame(AVCodecContext *avctx, VpeDecCtx *dec_ctx, VpiFrame **v
     }
     *last = dec_frame;
 
-    ret = vpe_alloc_frame(avctx, dec_ctx, dec_frame);
+    ret = vpe_alloc_frame(avctx, dec_frame);
     if (ret < 0)
         return ret;
 
@@ -253,7 +253,7 @@ static VpeDecFrame *vpe_find_frame(VpeDecCtx *dec_ctx, VpiFrame *vpi_frame)
 static int vpe_output_frame(AVCodecContext *avctx, VpiFrame *vpi_frame,
                             AVFrame *out_frame)
 {
-    VpeDecCtx *dec_ctx     = avctx->priv_data;
+    VpeDecCtx *dec_ctx     = (VpeDecCtx *)avctx->priv_data;
     VpeDecFrame *dec_frame = NULL;
     AVFrame *src_frame     = NULL;
     int ret;
@@ -289,7 +289,7 @@ static int vpe_output_frame(AVCodecContext *avctx, VpiFrame *vpi_frame,
  */
 static int vpe_dec_receive(AVCodecContext *avctx, AVFrame *frame)
 {
-    VpeDecCtx *dec_ctx = avctx->priv_data;
+    VpeDecCtx *dec_ctx  = (VpeDecCtx *)avctx->priv_data;
     VpiFrame *vpi_frame = NULL;
     int ret;
 
@@ -350,7 +350,7 @@ static int vpe_release_stream_mem(VpeDecCtx *dec_ctx)
 
 int ff_vpe_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 {
-    VpeDecCtx *dec_ctx     = avctx->priv_data;
+    VpeDecCtx *dec_ctx     = (VpeDecCtx *)avctx->priv_data;
     AVPacket avpkt         = { 0 };
     AVBufferRef *ref       = NULL;
     VpiFrame *in_vpi_frame = NULL;
@@ -431,10 +431,8 @@ int ff_vpe_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                 return AVERROR_EXTERNAL;
             }
             if (frame_buf_req) {
-                /* For field structure bitstream,
-                   didn't need to use frame buffer for every packet */
                 /* get frame buffer from pool */
-                ret = vpe_get_frame(avctx, dec_ctx, &in_vpi_frame);
+                ret = vpe_get_frame(avctx, &in_vpi_frame);
                 if (ret < 0) {
                     return ret;
                 }
@@ -519,6 +517,9 @@ av_cold int ff_vpe_decode_close(AVCodecContext *avctx)
         av_frame_free(&cur_frame->av_frame);
         av_freep(&cur_frame);
         cur_frame = dec_ctx->frame_list;
+    }
+    if (dec_ctx->dec_setting) {
+        free(dec_ctx->dec_setting);
     }
     vpi_destroy(dec_ctx->ctx, vpedev_ctx->device);
 
