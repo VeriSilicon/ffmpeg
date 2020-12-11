@@ -388,12 +388,11 @@ ffplay rtmp://10.10.3.88:1935/live/livestream
 You need to setup RTMP streaming server first
 ###### Streaming:
 ```bash
-./ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1 -low_res "2:(1920x1080)"
--i ${INPUT_FILE_HEVC_4K}
--filter_complex 'spliter_vpe=outputs=2[out0][out1]' -map '[out0]' -f null /dev/null -map '[out1]'
--c:v h264enc_vpe -preset fast -b:v 1000000
--enc_params "intra_pic_rate=15:pic_rc=1:pic_rc_config=rc.cfg"
--c:a copy -f flv rtmp://10.10.3.88:1935/live/livestream
+./ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1 -low_res "2:(1920x1080)" \
+-i ~/work/stream/LaLaLand_cafe_4K.mkv -filter_complex 'spliter_vpe=outputs=2[out0][out1]' \
+-map '[out0]' -f null /dev/null -map '[out1]' -c:v h264enc_vpe \
+-enc_params "intra_pic_rate=15" -preset medium -b:v 2000000 \
+-map 0:a -f flv rtmp://10.10.3.88:1935/live/livestream
 ```
 ###### Play
 ```bash
@@ -404,13 +403,13 @@ ffplay rtmp://10.10.3.88:1935/live/livestream
 You need to setup RTMP streaming server first
 ###### Streaming:
 ```bash
-./ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1
--low_res "4:(1920x1080)(1280x720)(640x360)" -i ${INPUT_FILE_HEVC_4K}
--filter_complex 'spliter_vpe=outputs=4[out0][out1][out2][out3]'
--map '[out0]' -c:v h264enc_vpe -preset fast -b:v 10000000 -c:a copy -f flv rtmp://10.10.3.88:1935/live/10M
--map '[out1]' -c:v h264enc_vpe -preset fast -b:v 5000000 -c:a copy -f flv rtmp://10.10.3.88:1935/live/5M
--map '[out2]' -c:v h264enc_vpe -preset fast -b:v 3000000 -c:a copy -f flv rtmp://10.10.3.88:1935/live/3M
--map '[out3]' -c:v h264enc_vpe -preset fast -b:v 500000 -c:a copy -f flv rtmp://10.10.3.88:1935/live/500k
+./ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1 \
+-low_res "4:(1920x1080)(1280x720)(640x360)" -i ~/work/stream/LaLaLand_cafe_4K.mkv \
+-filter_complex 'spliter_vpe=outputs=4[out0][out1][out2][out3]' \
+-map '[out0]' -c:v h264enc_vpe -preset fast -b:v 10000000 -map 0:a -f flv rtmp://10.10.3.88:1935/live/10M  \
+-map '[out1]' -c:v h264enc_vpe -preset fast -b:v 5000000 -map 0:a -f flv rtmp://10.10.3.88:1935/live/5M \
+-map '[out2]' -c:v h264enc_vpe -preset fast -b:v 3000000 -map 0:a -f flv rtmp://10.10.3.88:1935/live/3M \
+-map '[out3]' -c:v h264enc_vpe -preset fast -b:v 500000 -map 0:a -f flv rtmp://10.10.3.88:1935/live/500k
 ```
 ###### Play
 ```bash
