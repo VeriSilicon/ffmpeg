@@ -60,7 +60,7 @@ This project is VeriSilicon VPE plugin development trunk, it keep synced with FF
 2. Build FFmpeg：
     ```bash
     # cd ffmpeg
-    # ./configure --enable-vpe --extra-ldflags="-L/usr/lib/vpe" --extra-libs="-lvpi"
+    # ./configure --pkg-config=true --enable-vpe --extra-ldflags="-L/usr/lib/vpe" --extra-libs="-lvpi"
     # make -j8
     ```
 ## Run FFmpeg
