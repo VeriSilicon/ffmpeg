@@ -25,7 +25,7 @@
 
 This project is VeriSilicon VPE plugin development trunk, it keep synced with FFmpeg master branch.
 
-## Plugin Summary
+## 1.1 Plugin Summary
 
 | Plugin | Type| Comments| Capbilities|
 |---------------|---------|---------------------------------------------------------------------------------------------------------------|----------------------------------------------------|
@@ -40,14 +40,14 @@ This project is VeriSilicon VPE plugin development trunk, it keep synced with FF
 | spliter_vpe| filter| VeriSilicon Spliter | Spliter input video to Maximum 4 paths |
 | hwupload_vpe | filter| VeriSilicon Hardware Uploaderfor UYVY422| Upload raw data to hardware encoders. <br>Suppported raw data format:<br> UYVY422|
 
-## Install VPE
+## 1.2 Install VPE
 1. Install VPE supported hardware like Solios-X to your computer;
 2. Download VPE driver:
     ```bash
     # git clone git@github.com:VeriSilicon/vpe.git
     ```
 3. Config tollchain:
-    If you are doing cross-compiling, please run configure to config tollchain related setting.
+    If you are doing cross-compiling, please run ./configure to config tollchain related setting.
 
     ```bash
 
@@ -58,7 +58,6 @@ This project is VeriSilicon VPE plugin development trunk, it keep synced with FF
     sysroot=/toolchain/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/aarch64-linux-gnu/libc
     kernel=/work/imx8mmevk-poky-linux/linux-imx/4.19.35-r0/build
     debug=n
-    outpath=
     Create VPE build config file successfully!
     ```
 4. Build VPE:
@@ -68,13 +67,14 @@ This project is VeriSilicon VPE plugin development trunk, it keep synced with FF
     ```
 
 5. Install VPE:
+    * VPE build output is vpe/package;
     * For non-cross build, the VPE libs will be installed to your build server;
-    * For cross build, the VPE lib will be installed to --outpath folder which was specified by "--outpath" parameter in ./configure; if outpath is not specified, then the VPE libs will be copied to VPE/build folder
+    * For cross build, the VPE lib will be installed to $installpath folder which was specified by "./configure --installpath="; if $installpath is not set, then the VPE will not be installed.
 
     ```bash
     # sudo make install
     ```
-## Install FFmepg
+## 1.3 Install FFmepg
 1. Get FFmpeg source code:
     ```bash
     # git clone git@github.com:VeriSilicon/ffmpeg.git
@@ -87,13 +87,13 @@ This project is VeriSilicon VPE plugin development trunk, it keep synced with FF
     ```
 
 2. Build FFmpeg - cross compiling:
-    Please use vpe/build_vpe.sh to do this.
-## Build FFmpeg + VPE together
+   Please check vpe/build_vpe.sh to learn how to config FFmpeg, or you can run build_vpe.sh to build FFmpeg.
+## 1.4 Build FFmpeg + VPE together with build_vpe.sh
 
-We provide script to do this job, it's vpe/build_vpe.sh
-This script will do VPE compiling, VPE installation, and FFmpeg compiling.
-For cross-compiling case, this script is the best choise since the FFmpeg configuration  is a littler bit complex.
-## Run FFmpeg
+We provide script to do this job, it's vpe/build_vpe.sh:
+This script will do VPE build + VPE installation + FFmpeg build.
+
+## 1.5 Run FFmpeg
 ```bash
 ./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -c:v h264_vpe -transcode 1 \
 -i ${INPUT_FILE_H264} -c:v h264enc_vpe out0.h264
