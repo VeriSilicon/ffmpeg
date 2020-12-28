@@ -63,13 +63,13 @@ typedef struct VpeEncCtx {
     AVFrame *frame;
     int eof;
 
-    /*Set the encoding preset, superfast/fast/medium/slow/superslow*/
+    /*Encoding preset, superfast/fast/medium/slow/superslow*/
     char *preset;
-    /*Set the profile of the encoding*/
+    /*Profile of the encoding*/
     char *profile;
-    /*Set the level of the encoding*/
+    /*Level of the encoding*/
     char *level;
-    /*The encoding parameters*/
+    /*Encoding parameters*/
     char *enc_params;
     /*VCE Constant rate factor mode*/
     int crf;

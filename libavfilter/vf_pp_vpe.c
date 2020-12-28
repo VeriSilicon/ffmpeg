@@ -24,29 +24,41 @@
 #include <vpe/vpi_types.h>
 #include <vpe/vpi_api.h>
 
-#include "avfilter.h"
-#include "formats.h"
-#include "internal.h"
-#include "libavutil/pixfmt.h"
-#include "libavutil/buffer.h"
-#include "libavutil/hwcontext.h"
+#include "filters.h"
 #include "libavutil/opt.h"
-#include "libavutil/frame.h"
-#include "libavfilter/filters.h"
+#include "libavutil/hwcontext.h"
 #include "libavutil/hwcontext_vpe.h"
+
+typedef struct VpePPFrame {
+    AVFrame *av_frame;
+    // frame structure used for external hw device
+    VpiFrame *vpi_frame;
+    // vpi_frame has been used
+    int used;
+    // the next linked list item
+    struct VpePPFrame *next;
+} VpePPFrame;
 
 typedef struct VpePPFilter {
     const AVClass *av_class;
     AVBufferRef *hw_device;
     AVBufferRef *hw_frame;
 
+    /*VPI context*/
     VpiCtx ctx;
+    /*The pointer of the VPE API*/
     VpiApi *vpi;
 
+    /*output channel number*/
     int nb_outputs;
+    /*force 10bit output*/
     int force_10bit;
+    /*low_res parameter*/
     char *low_res;
-    VpiPPOpition cfg;
+    /*pp option*/
+    VpiPPOption *option;
+    /*VPE frame linked list*/
+    VpePPFrame *frame_list;
 } VpePPFilter;
 
 static const enum AVPixelFormat input_pix_fmts[] = {
@@ -92,7 +104,7 @@ static const enum AVPixelFormat output_pix_fmts[] = {
 
 static av_cold int vpe_pp_init(AVFilterContext *avf_ctx)
 {
-    int ret          = 0;
+    int ret         = 0;
     AVFilterPad pad = { 0 };
 
     pad.type = AVMEDIA_TYPE_VIDEO;
@@ -110,6 +122,7 @@ static av_cold void vpe_pp_uninit(AVFilterContext *avf_ctx)
     AVHWDeviceContext *hwdevice_ctx;
     AVVpeDeviceContext *vpedev_ctx;
     VpePPFilter *ctx = avf_ctx->priv;
+    VpePPFrame *cur_frame;
 
     if (ctx->hw_device) {
         if (!avf_ctx->hw_device_ctx) {
@@ -121,6 +134,15 @@ static av_cold void vpe_pp_uninit(AVFilterContext *avf_ctx)
         }
 
         ctx->vpi->close(ctx->ctx);
+
+        cur_frame = ctx->frame_list;
+        while (cur_frame) {
+            ctx->frame_list = cur_frame->next;
+            av_frame_free(&cur_frame->av_frame);
+            av_freep(&cur_frame);
+            cur_frame = ctx->frame_list;
+        }
+
         av_buffer_unref(&ctx->hw_frame);
         av_buffer_unref(&ctx->hw_device);
         vpi_destroy(ctx->ctx, vpedev_ctx->device);
@@ -128,68 +150,97 @@ static av_cold void vpe_pp_uninit(AVFilterContext *avf_ctx)
     }
 }
 
-static void vpe_pp_picture_consumed(void *opaque, uint8_t *data)
+static void vpe_pp_output_vpeframe(AVFrame *input, VpiFrame *output)
 {
-    VpePPFilter *ctx = opaque;
-    VpiCtrlCmdParam cmd;
-
-    cmd.cmd  = VPI_CMD_PP_CONSUME;
-    cmd.data = data;
-    ctx->vpi->control(ctx->ctx, (void *)&cmd, NULL);
-    av_freep(&data);
+    output->width       = input->width;
+    output->height      = input->height;
+    output->linesize[0] = input->linesize[0];
+    output->linesize[1] = input->linesize[1];
+    output->linesize[2] = input->linesize[2];
+    output->key_frame   = input->key_frame;
+    output->pts         = input->pts;
+    output->pkt_dts     = input->pkt_dts;
+    output->data[0]     = input->data[0];
+    output->data[1]     = input->data[1];
+    output->data[2]     = input->data[2];
 }
 
-static int vpe_pp_output_avframe(VpePPFilter *ctx, VpiFrame *input,
-                                 AVFrame *output)
+/**
+ * alloc frame from hwcontext for pp filter
+ */
+static int vpe_pp_alloc_frame(AVFilterLink *outlink, VpePPFrame *pp_frame)
 {
-    AVHWFramesContext *hwframe_ctx   = (AVHWFramesContext *)ctx->hw_frame->data;
-    AVVpeFramesContext *vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
-    VpiFrame *frame_hwctx            = vpeframe_ctx->frame;
+    AVFrame *frame;
 
-    if (input) {
-        output->width       = input->width;
-        output->height      = input->height;
-        output->linesize[0] = input->linesize[0];
-        output->linesize[1] = input->linesize[1];
-        output->linesize[2] = input->linesize[2];
-        output->key_frame   = input->key_frame;
-        output->format      = AV_PIX_FMT_VPE;
-        output->data[0]     = (void*)input;
-        output->buf[0] =
-            av_buffer_create((uint8_t *)input, sizeof(VpiFrame),
-                             vpe_pp_picture_consumed, (void *)ctx,
-                             AV_BUFFER_FLAG_READONLY);
-        if (output->buf[0] == NULL)
-            return AVERROR(ENOMEM);
-
-        memcpy(frame_hwctx, input, sizeof(VpiFrame));
-        output->hw_frames_ctx = av_buffer_ref(ctx->hw_frame);
-        if (output->hw_frames_ctx == NULL)
-            return AVERROR(ENOMEM);
-
-    } else {
-        memset(output, 0, sizeof(AVFrame));
+    frame = ff_get_video_buffer(outlink, outlink->w, outlink->h);
+    if (!frame) {
+        av_log(outlink, AV_LOG_ERROR, "Failed to allocate frame to pp_vpe to.\n");
+        return AVERROR(ENOMEM);
     }
+
+    pp_frame->av_frame  = frame;
+    pp_frame->vpi_frame = (VpiFrame*)frame->data[0];
+    pp_frame->used      = 1;
 
     return 0;
 }
 
-static int vpe_pp_output_vpeframe(AVFrame *input, VpiFrame *output)
+/**
+ * clear the unsed frames
+ */
+static void vpe_pp_clear_unused_frames(VpePPFilter *ctx)
 {
-    memset(output, 0, sizeof(VpiFrame));
-    if (input) {
-        output->width            = input->width;
-        output->height           = input->height;
-        output->linesize[0]      = input->linesize[0];
-        output->linesize[1]      = input->linesize[1];
-        output->linesize[2]      = input->linesize[2];
-        output->key_frame        = input->key_frame;
-        output->pts              = input->pts;
-        output->pkt_dts          = input->pkt_dts;
-        output->data[0]          = input->data[0];
-        output->data[1]          = input->data[1];
-        output->data[2]          = input->data[2];
+    VpePPFrame *cur_frame = ctx->frame_list;
+
+    while (cur_frame) {
+        if (cur_frame->used
+            && !cur_frame->vpi_frame->locked) {
+            cur_frame->used = 0;
+            av_frame_unref(cur_frame->av_frame);
+        }
+        cur_frame = cur_frame->next;
     }
+}
+
+/**
+ * get frame from the linked list
+ */
+static int vpe_pp_get_frame(AVFilterLink *inlink, AVFrame **frame)
+{
+    AVFilterContext *avf_ctx = inlink->dst;
+    AVFilterLink *outlink    = avf_ctx->outputs[0];
+    VpePPFilter *ctx         = avf_ctx->priv;
+    VpePPFrame *pp_frame, **last;
+    int ret;
+
+    vpe_pp_clear_unused_frames(ctx);
+
+    pp_frame = ctx->frame_list;
+    last     = &ctx->frame_list;
+    while (pp_frame) {
+        if (!pp_frame->used) {
+            ret = vpe_pp_alloc_frame(outlink, pp_frame);
+            if (ret < 0)
+                return ret;
+            *frame = pp_frame->av_frame;
+            return 0;
+        }
+
+        last     = &pp_frame->next;
+        pp_frame = pp_frame->next;
+    }
+
+    pp_frame = av_mallocz(sizeof(*pp_frame));
+    if (!pp_frame)
+        return AVERROR(ENOMEM);
+
+    *last = pp_frame;
+
+    ret = vpe_pp_alloc_frame(outlink, pp_frame);
+    if (ret < 0)
+        return ret;
+
+    *frame = pp_frame->av_frame;
 
     return 0;
 }
@@ -198,15 +249,14 @@ static int vpe_pp_filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVFilterContext *avf_ctx = inlink->dst;
     AVFilterLink *outlink    = avf_ctx->outputs[0];
-    AVFrame *buf_out = NULL;
+    AVFrame *pp_frame, *out;
     VpePPFilter *ctx = avf_ctx->priv;
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
     VpiFrame *in_picture, *out_picture;
+    int ret = 0;
 
-    int ret             = 0;
-
-    hwframe_ctx = (AVHWFramesContext *)ctx->hw_frame->data;
+    hwframe_ctx  = (AVHWFramesContext *)ctx->hw_frame->data;
     vpeframe_ctx = hwframe_ctx->hwctx;
 
     if (inlink->format != AV_PIX_FMT_VPE) {
@@ -214,47 +264,53 @@ static int vpe_pp_filter_frame(AVFilterLink *inlink, AVFrame *frame)
         if (!in_picture) {
             return AVERROR(ENOMEM);
         }
-        ret = vpe_pp_output_vpeframe(frame, in_picture);
-        if (ret)
-            return ret;
+        vpe_pp_output_vpeframe(frame, in_picture);
     } else {
         in_picture = (VpiFrame *)frame->data[0];
     }
 
-    out_picture = (VpiFrame *)av_mallocz(vpeframe_ctx->frame_size);
-    if (!out_picture) {
-        return AVERROR(ENOMEM);
+    ret = vpe_pp_get_frame(inlink, &pp_frame);
+    if (ret) {
+        goto fail;
     }
-    ret = ctx->vpi->process(ctx->ctx, in_picture, out_picture);
+
+    ret = ctx->vpi->process(ctx->ctx, in_picture, pp_frame->data[0]);
     if (ret)
         return AVERROR_EXTERNAL;
 
-    buf_out = av_frame_alloc();
-    if (!buf_out)
-        return AVERROR(ENOMEM);
-
-    ret = av_frame_copy_props(buf_out, frame);
+    ret = av_frame_copy_props(pp_frame, frame);
     if (ret)
         return ret;
 
-    ret = vpe_pp_output_avframe(ctx, out_picture, buf_out);
-    if (ret < 0)
-        return AVERROR_EXTERNAL;
+    out_picture = (VpiFrame *)pp_frame->data[0];
+
+    pp_frame->width       = out_picture->width;
+    pp_frame->height      = out_picture->height;
+    pp_frame->linesize[0] = out_picture->linesize[0];
+    pp_frame->linesize[1] = out_picture->linesize[1];
+    pp_frame->linesize[2] = out_picture->linesize[2];
+    pp_frame->key_frame   = out_picture->key_frame;
+    pp_frame->format      = AV_PIX_FMT_VPE;
 
     if (inlink->format != AV_PIX_FMT_VPE) {
         av_freep(&in_picture);
     }
     av_frame_free(&frame);
-
     ret = ff_outlink_get_status(outlink);
     if (ret < 0)
         return ret;
 
-    ret = ff_filter_frame(outlink, buf_out);
-    if (ret < 0)
-        return ret;
+    out = av_frame_alloc();
+    if (!out)
+        return AVERROR(ENOMEM);
 
-    return 0;
+    av_frame_ref(out, pp_frame);
+    return ff_filter_frame(outlink, out);
+
+fail:
+    av_frame_free(&frame);
+    av_frame_free(&out);
+    return ret;
 }
 
 static int vpe_pp_init_hwctx(AVFilterContext *ctx, AVFilterLink *inlink)
@@ -311,21 +367,19 @@ static int vpe_pp_config_props(AVFilterLink *inlink)
 {
     AVFilterContext *avf_ctx = inlink->dst;
     AVHWFramesContext *hwframe_ctx;
-    AVVpeFramesContext *vpeframe_ctx;
     AVHWDeviceContext *hwdevice_ctx;
     AVVpeDeviceContext *vpedev_ctx;
-    VpePPFilter *ctx  = avf_ctx->priv;
-    VpiPPOpition *cfg = &ctx->cfg;
+    VpePPFilter *ctx = avf_ctx->priv;
+    VpiPPOption *option;
     VpiCtrlCmdParam cmd;
     int ret = 0;
 
     ret = vpe_pp_init_hwctx(avf_ctx, inlink);
     if (ret < 0){
-        return AVERROR_EXTERNAL;
+        return ret;
     }
 
     hwframe_ctx  = (AVHWFramesContext *)ctx->hw_frame->data;
-    vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
     if (!avf_ctx->hw_device_ctx) {
         vpedev_ctx = hwframe_ctx->device_ctx->hwctx;
     } else {
@@ -337,29 +391,30 @@ static int vpe_pp_config_props(AVFilterLink *inlink)
     if (ret)
         return AVERROR_EXTERNAL;
 
-    ret = ctx->vpi->init(ctx->ctx, NULL);
-    if (ret)
-        return AVERROR_EXTERNAL;
-
+    // get the pp option struct
+    cmd.cmd = VPI_CMD_PP_INIT_OPTION;
+    ret = ctx->vpi->control(ctx->ctx, (void *)&cmd, (void *)&ctx->option);
+    if (ret) {
+        return AVERROR(ENOMEM);
+    }
+    option = (VpiPPOption *)ctx->option;
     /*Get config*/
-    cfg->w           = inlink->w;
-    cfg->h           = inlink->h;
-    cfg->format      = vpe_get_format(inlink->format);
-    cfg->nb_outputs  = ctx->nb_outputs;
-    cfg->force_10bit = ctx->force_10bit;
-    cfg->low_res     = ctx->low_res;
-    cfg->frame       = vpeframe_ctx->frame;
+    option->w           = inlink->w;
+    option->h           = inlink->h;
+    option->format      = vpe_get_format(inlink->format);
+    option->nb_outputs  = ctx->nb_outputs;
+    option->force_10bit = ctx->force_10bit;
+    option->low_res     = ctx->low_res;
+
     if (inlink->format == AV_PIX_FMT_VPE) {
-        // the previous filter is hwupload_vpe
-        cfg->b_disable_tcache = 1;
+        // the previous filter is hwupload
+        option->b_disable_tcache = 1;
     } else {
-        cfg->b_disable_tcache = 0;
+        option->b_disable_tcache = 0;
     }
 
-    cmd.cmd  = VPI_CMD_PP_CONFIG;
-    cmd.data = cfg;
-    ret      = ctx->vpi->control(ctx->ctx, (void *)&cmd, NULL);
-    if (ret < 0){
+    ret = ctx->vpi->init(ctx->ctx, option);
+    if (ret) {
         return AVERROR_EXTERNAL;
     }
 

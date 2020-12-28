@@ -62,7 +62,7 @@ static void vpe_enc_release_param_list(VpeEncCtx *enc_ctx)
     VpiEncParamSet *tail = enc_ctx->param_list;
     VpiEncParamSet *node = NULL;
 
-    while (tail != NULL) {
+    while (tail) {
         node = tail->next;
         free(tail);
         tail = node;
@@ -76,7 +76,6 @@ static void vpe_enc_release_param_list(VpeEncCtx *enc_ctx)
 int ff_vpe_encode_init(AVCodecContext *avctx, VpiPlugin type)
 {
     AVHWFramesContext *hwframe_ctx;
-    AVVpeFramesContext *vpeframe_ctx;
     AVHWDeviceContext *hwdevice_ctx;
     AVVpeDeviceContext *vpedev_ctx;
     VpeEncCtx *enc_ctx = (VpeEncCtx *)avctx->priv_data;
@@ -94,7 +93,6 @@ int ff_vpe_encode_init(AVCodecContext *avctx, VpiPlugin type)
     }
 
     hwframe_ctx  = (AVHWFramesContext *)enc_ctx->hwframe->data;
-    vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
 
     if (!avctx->hw_device_ctx) {
         vpedev_ctx = hwframe_ctx->device_ctx->hwctx;
@@ -121,8 +119,6 @@ int ff_vpe_encode_init(AVCodecContext *avctx, VpiPlugin type)
     enc_ctx->frame = av_frame_alloc();
     if (!enc_ctx->frame)
         return AVERROR(ENOMEM);
-
-    enc_ctx->vpi_frame = vpeframe_ctx->frame;
 
     return 0;
 }
@@ -272,9 +268,12 @@ static int vpe_enc_receive_pic(AVCodecContext *avctx)
         if (ret < 0 && ret != AVERROR_EOF) {
             return ret;
         }
+        if (ret == AVERROR_EOF)
+            frame = NULL;
+    } else {
+        av_log(enc_ctx, AV_LOG_ERROR, "frame has not been put to VPE encoder\n");
+        return AVERROR_INVALIDDATA;
     }
-    if (ret == AVERROR_EOF)
-        frame = NULL;
 
     transpic->state = 1;
 
@@ -315,9 +314,9 @@ static int vpe_enc_receive_pic(AVCodecContext *avctx)
 static void vpe_enc_output_packet(VpiPacket *vpi_packet,
                                   AVPacket *out_packet)
 {
-    out_packet->size = vpi_packet->size;
-    out_packet->pts  = vpi_packet->pts;
-    out_packet->dts  = vpi_packet->pkt_dts;
+    out_packet->size  = vpi_packet->size;
+    out_packet->pts   = vpi_packet->pts;
+    out_packet->dts   = vpi_packet->pkt_dts;
     out_packet->flags = vpi_packet->flags;
 }
 

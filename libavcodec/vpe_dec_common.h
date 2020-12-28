@@ -34,7 +34,9 @@
 extern const AVOption vpe_decode_options[];
 
 typedef struct {
+    // packet buffer list using state
     int state;
+    // avpkt buffer ref
     AVBufferRef *buf_ref;
 } VpeDecPacket;
 
@@ -63,7 +65,7 @@ typedef struct VpeDecCtx {
     // VPE decodec setting parameters
     VpiDecOption *dec_setting;
 
-    // VPE decoder resieze config
+    // VPE decoder low_res config
     uint8_t *pp_setting;
     // VPE transcode enable
     int transcode;
@@ -74,7 +76,7 @@ typedef struct VpeDecCtx {
     // VPE frame linked list
     VpeDecFrame *frame_list;
 
-    // Input AvPacket buffer_ref
+    // Input AVPacket buffer_ref
     VpeDecPacket packet_buf_wait_list[MAX_WAIT_DEPTH];
 } VpeDecCtx;
 

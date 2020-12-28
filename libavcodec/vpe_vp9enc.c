@@ -98,12 +98,10 @@ static av_cold int vpe_vp9_encode_init(AVCodecContext *avctx)
     }
     vp9_enc_cfg = (VpiVp9EncCfg *)enc_ctx->enc_cfg;
 
-    avctx->pix_fmt             = AV_PIX_FMT_YUV420P;
     vp9_enc_cfg->preset        = enc_ctx->preset;
     vp9_enc_cfg->effort        = enc_ctx->effort;
     vp9_enc_cfg->lag_in_frames = enc_ctx->lag_in_frames;
     vp9_enc_cfg->passes        = enc_ctx->passes;
-    vp9_enc_cfg->framectx      = enc_ctx->vpi_frame;
     vp9_enc_cfg->width         = avctx->width;
     vp9_enc_cfg->height        = avctx->height;
 

@@ -26,8 +26,7 @@
  * Initialize hw frame and device
  *
  * The avctx->hw_frames_ctx is the reference to the AVHWFramesContext.
- * If it exists, get its data, otherwise create the hw_frame_ctx
- * then initialize hw_frame_ctx.
+ * Create the hw_frame_ctx and initialize hw_frame_ctx.
  */
 static int vpe_dec_init_hwctx(AVCodecContext *avctx)
 {
@@ -276,12 +275,7 @@ static int vpe_output_frame(AVCodecContext *avctx, VpiFrame *vpi_frame,
     out_frame->pkt_dts               = vpi_frame->pkt_dts;
     out_frame->best_effort_timestamp = out_frame->pts;
 
-    out_frame->hw_frames_ctx = av_buffer_ref(avctx->hw_frames_ctx);
-    if (!out_frame->hw_frames_ctx) {
-        ret = AVERROR(ENOMEM);
-    }
-
-    return 0;
+    return ret;
 }
 
 /**
@@ -371,7 +365,7 @@ int ff_vpe_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
 
     /* feed decoder */
     while (1) {
-        cmd_param.cmd = VPI_CMD_DEC_STRM_BUF_COUNT;
+        cmd_param.cmd  = VPI_CMD_DEC_STRM_BUF_COUNT;
         cmd_param.data = NULL;
         ret = dec_ctx->vpi->control(dec_ctx->ctx,
                         (void*)&cmd_param, (void *)&strm_buf_count);
@@ -437,7 +431,7 @@ int ff_vpe_decode_receive_frame(AVCodecContext *avctx, AVFrame *frame)
                     return ret;
                 }
 
-                cmd_param.cmd = VPI_CMD_DEC_SET_FRAME_BUFFER;
+                cmd_param.cmd  = VPI_CMD_DEC_SET_FRAME_BUFFER;
                 cmd_param.data = (void *)in_vpi_frame;
                 ret = dec_ctx->vpi->control(dec_ctx->ctx,
                                             (void *)&cmd_param, NULL);
@@ -521,7 +515,10 @@ av_cold int ff_vpe_decode_close(AVCodecContext *avctx)
     if (dec_ctx->dec_setting) {
         free(dec_ctx->dec_setting);
     }
-    vpi_destroy(dec_ctx->ctx, vpedev_ctx->device);
+    if (vpi_destroy(dec_ctx->ctx, vpedev_ctx->device)) {
+        av_log(avctx, AV_LOG_ERROR, "decoder vpi_destroy failure\n");
+        return AVERROR_EXTERNAL;
+    }
 
     return 0;
 }

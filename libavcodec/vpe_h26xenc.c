@@ -97,17 +97,9 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
     if (ret != 0) {
         return AVERROR(ENOMEM);
     }
+
     h26x_enc_cfg = (VpiH26xEncCfg *)enc_ctx->enc_cfg;
-
-    if (avctx->codec->id == AV_CODEC_ID_HEVC) {
-        strcpy(h26x_enc_cfg->module_name, "HEVCENC");
-    } else if (avctx->codec->id == AV_CODEC_ID_H264) {
-        strcpy(h26x_enc_cfg->module_name, "H264ENC");
-    }
-
     /*Initialize the VPE h26x encoder configuration*/
-    h26x_enc_cfg->crf    = enc_ctx->crf;
-    h26x_enc_cfg->preset = enc_ctx->preset;
     if (avctx->codec->id == AV_CODEC_ID_HEVC) {
         h26x_enc_cfg->codec_id = CODEC_ID_HEVC;
     } else if (avctx->codec->id == AV_CODEC_ID_H264) {
@@ -117,7 +109,8 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
                "%s, avctx->codec->id isn't HEVC or H264 \n", __FUNCTION__);
         return AVERROR(EINVAL);
     }
-    h26x_enc_cfg->codec_name = avctx->codec->name;
+    h26x_enc_cfg->crf        = enc_ctx->crf;
+    h26x_enc_cfg->preset     = enc_ctx->preset;
     h26x_enc_cfg->profile    = enc_ctx->profile;
     h26x_enc_cfg->level      = enc_ctx->level;
     h26x_enc_cfg->force_idr  = enc_ctx->force_idr;
@@ -146,7 +139,7 @@ static av_cold int vpe_h26x_encode_init(AVCodecContext *avctx)
         h26x_enc_cfg->input_format = VPI_YUV420_PLANAR;
         break;
     }
-    h26x_enc_cfg->frame_ctx  = enc_ctx->vpi_frame;
+
     h26x_enc_cfg->param_list = enc_ctx->param_list;
 
     h26x_enc_cfg->colour_primaries         = avctx->color_primaries;

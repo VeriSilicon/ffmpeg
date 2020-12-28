@@ -20,10 +20,7 @@
  */
 #include <vpe/vpi_types.h>
 
-#include "avfilter.h"
 #include "filters.h"
-#include "libavutil/buffer.h"
-#include "libavutil/log.h"
 #include "libavutil/opt.h"
 #include "libavutil/hwcontext.h"
 #include "libavutil/hwcontext_vpe.h"
@@ -32,7 +29,6 @@ typedef struct VpeUploadContext {
     const AVClass *class;
 
     AVBufferRef *hwframe;
-    AVBufferRef *hwdevice;
 
     // VPI codec/filter context
     VpiCtx ctx;
@@ -52,7 +48,6 @@ static av_cold void vpe_upload_uninit(AVFilterContext *ctx)
     }
 
     av_buffer_unref(&s->hwframe);
-    av_buffer_unref(&s->hwdevice);
 
     if (s->ctx) {
         hwdevice_ctx = (AVHWDeviceContext *)ctx->hw_device_ctx->data;
@@ -63,8 +58,8 @@ static av_cold void vpe_upload_uninit(AVFilterContext *ctx)
 
 static int vpe_upload_config_input(AVFilterLink *inlink)
 {
-    AVFilterContext * ctx = inlink->dst;
-    VpeUploadContext * s = ctx->priv;
+    AVFilterContext *ctx = inlink->dst;
+    VpeUploadContext *s  = ctx->priv;
 
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
@@ -104,10 +99,6 @@ static int vpe_upload_config_input(AVFilterLink *inlink)
     s->hwframe = av_buffer_ref(inlink->hw_frames_ctx);
     if (s->hwframe == NULL)
         return AVERROR(ENOMEM);
-    s->hwdevice = av_buffer_ref(ctx->hw_device_ctx);
-    if(!s->hwdevice){
-        return AVERROR(ENOMEM);
-    }
 
     hwdevice_ctx = (AVHWDeviceContext *)ctx->hw_device_ctx->data;
     vpedev_ctx   = (AVVpeDeviceContext *)hwdevice_ctx->hwctx;
@@ -191,7 +182,7 @@ static void upload_pic_consume(void *opaque, uint8_t *data)
     VpeUploadContext *ctx = (VpeUploadContext *)opaque;
     VpiCtrlCmdParam cmd_param;
 
-    // make decoder release DPB
+    // release DPB
     cmd_param.cmd  = VPI_CMD_HWUL_FREE_BUF;
     cmd_param.data = data;
     ctx->vpi->control(ctx->ctx, (void *)&cmd_param, NULL);
@@ -202,12 +193,12 @@ static void upload_pic_consume(void *opaque, uint8_t *data)
 static int vpe_upload_filter_frame(AVFilterLink *link, AVFrame *in)
 {
     AVFilterLink  *outlink = link->dst->outputs[0];
-    VpeUploadContext *ctx = outlink->src->priv;
+    VpeUploadContext *ctx  = outlink->src->priv;
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
     AVFrame *out = NULL;
-    int ret = 0;
-    VpiFrame *in_frame, *out_frame;
+    int ret      = 0;
+    VpiFrame *in_frame;
 
     hwframe_ctx = (AVHWFramesContext *)ctx->hwframe->data;
     vpeframe_ctx = hwframe_ctx->hwctx;
@@ -216,10 +207,13 @@ static int vpe_upload_filter_frame(AVFilterLink *link, AVFrame *in)
     if (!in_frame) {
         return AVERROR(ENOMEM);
     }
-    out_frame = (VpiFrame *)av_mallocz(vpeframe_ctx->frame_size);
-    if (!out_frame) {
-        return AVERROR(ENOMEM);
+    out = ff_get_video_buffer(outlink, outlink->w, outlink->h);
+    if (!out) {
+        av_log(ctx, AV_LOG_ERROR, "Failed to allocate frame to upload_vpe to.\n");
+        ret = AVERROR(ENOMEM);
+        goto fail;
     }
+
     in_frame->linesize[0] = in->linesize[0];
     in_frame->linesize[1] = in->linesize[1];
     in_frame->linesize[2] = in->linesize[2];
@@ -228,25 +222,16 @@ static int vpe_upload_filter_frame(AVFilterLink *link, AVFrame *in)
     in_frame->data[0]     = in->data[0];
     in_frame->data[1]     = in->data[1];
     in_frame->data[2]     = in->data[2];
-    in_frame->width       = in->width;
-    in_frame->height      = in->height;
-
     in_frame->key_frame   = in->key_frame;
     in_frame->pts         = in->pts;
     in_frame->pkt_dts     = in->pkt_dts;
 
-    ret = ctx->vpi->process(ctx->ctx, in_frame, out_frame);
+    ret = ctx->vpi->process(ctx->ctx, in_frame, out->data[0]);
     if (ret) {
         av_log(ctx, AV_LOG_ERROR,
                "hwupload_vpe filter frame failed,error=%s(%d)\n",
                vpi_error_str(ret), ret);
         return AVERROR_EXTERNAL;
-    }
-
-    out = av_frame_alloc();
-    if(!out){
-        av_log(ctx, AV_LOG_ERROR,"can not alloc \n");
-        return AVERROR(ENOMEM);
     }
 
     ret = av_frame_copy_props(out, in);
@@ -260,20 +245,6 @@ static int vpe_upload_filter_frame(AVFilterLink *link, AVFrame *in)
     out->format = AV_PIX_FMT_VPE;
     out->linesize[0] = in->width;
     out->linesize[1] = in->width/2;
-
-    out->data[0] = (void *)out_frame;
-    out->buf[0] = av_buffer_create((uint8_t *)out_frame,
-                                    sizeof(vpeframe_ctx->frame_size),
-                                    upload_pic_consume, ctx,
-                                    AV_BUFFER_FLAG_READONLY);
-    if (out->buf[0] == NULL) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
-    out->hw_frames_ctx = av_buffer_ref(ctx->hwframe);
-    if (out->hw_frames_ctx == NULL) {
-      goto fail;
-    }
 
     av_freep(&in_frame);
     av_frame_free(&in);

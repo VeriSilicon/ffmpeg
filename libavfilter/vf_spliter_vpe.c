@@ -21,20 +21,16 @@
 
 #include <vpe/vpi_types.h>
 
-#include "avfilter.h"
 #include "filters.h"
-#include "internal.h"
-#include "libavutil/mem.h"
 #include "libavutil/opt.h"
-#include "libavutil/frame.h"
-#include "libavutil/buffer.h"
-#include "libavutil/internal.h"
 #include "libavutil/hwcontext.h"
 #include "libavutil/hwcontext_vpe.h"
 
-typedef struct SpliterVpeContext {
+typedef struct VpeSpliterContext {
     const AVClass *class;
+    /*setting output channel number*/
     int nb_outputs;
+    /*valid output channel number*/
     int valid_outputs;
     struct {
         int enabled;
@@ -42,26 +38,14 @@ typedef struct SpliterVpeContext {
         int flag;
         int width;
         int height;
-        struct {
-            int enabled;
-            int x;
-            int y;
-            int w;
-            int h;
-        } crop;
-        struct {
-            int enabled;
-            int w;
-            int h;
-        } scale;
     } pic_info[PIC_INDEX_MAX_NUMBER];
-} SpliterVpeContext;
+} VpeSpliterContext;
 
-static int spliter_vpe_out_config_props(AVFilterLink *outlink);
+static int vpe_spliter_out_config_props(AVFilterLink *outlink);
 
-static av_cold int spliter_vpe_init(AVFilterContext *ctx)
+static av_cold int vpe_spliter_init(AVFilterContext *ctx)
 {
-    SpliterVpeContext *s = ctx->priv;
+    VpeSpliterContext *s = ctx->priv;
     int i, ret;
 
     for (i = 0; i < s->nb_outputs; i++) {
@@ -74,7 +58,7 @@ static av_cold int spliter_vpe_init(AVFilterContext *ctx)
         if (!pad.name) {
             return AVERROR(ENOMEM);
         }
-        pad.config_props = spliter_vpe_out_config_props;
+        pad.config_props = vpe_spliter_out_config_props;
 
         if ((ret = ff_insert_outpad(ctx, i, &pad)) < 0) {
             av_freep(&pad.name);
@@ -90,7 +74,7 @@ static av_cold int spliter_vpe_init(AVFilterContext *ctx)
     return 0;
 }
 
-static av_cold void spliter_vpe_uninit(AVFilterContext *ctx)
+static av_cold void vpe_spliter_uninit(AVFilterContext *ctx)
 {
     int i;
 
@@ -99,20 +83,20 @@ static av_cold void spliter_vpe_uninit(AVFilterContext *ctx)
     }
 }
 
-static int spliter_vpe_config_props(AVFilterLink *inlink)
+static int vpe_spliter_config_props(AVFilterLink *inlink)
 {
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
     VpiFrame *frame_hwctx;
     AVFilterContext *dst = inlink->dst;
-    SpliterVpeContext *s = dst->priv;
+    VpeSpliterContext *s = dst->priv;
     AVFilterLink *outlink;
     AVFilterContext *dst_output;
     int i;
 
-    hwframe_ctx = (AVHWFramesContext *)inlink->hw_frames_ctx->data;
+    hwframe_ctx  = (AVHWFramesContext *)inlink->hw_frames_ctx->data;
     vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
-    frame_hwctx = vpeframe_ctx->frame;
+    frame_hwctx  = vpeframe_ctx->frame;
 
     for (i = 0; i < PIC_INDEX_MAX_NUMBER; i++) {
         s->pic_info[i].enabled = frame_hwctx->pic_info[i].enabled;
@@ -120,12 +104,8 @@ static int spliter_vpe_config_props(AVFilterLink *inlink)
         s->pic_info[i].width   = frame_hwctx->pic_info[i].width;
         s->pic_info[i].height  = frame_hwctx->pic_info[i].height;
     }
-    s->pic_info[0].crop.enabled = frame_hwctx->pic_info[0].crop.enabled;
-    s->pic_info[0].crop.x       = frame_hwctx->pic_info[0].crop.x;
-    s->pic_info[0].crop.y       = frame_hwctx->pic_info[0].crop.y;
-    s->pic_info[0].crop.w       = frame_hwctx->pic_info[0].crop.w;
-    s->pic_info[0].crop.h       = frame_hwctx->pic_info[0].crop.h;
 
+    // check the valid output except the null device
     for (i = 0; i < s->nb_outputs; i++) {
         outlink = dst->outputs[i];
         if (outlink) {
@@ -141,17 +121,16 @@ static int spliter_vpe_config_props(AVFilterLink *inlink)
     return 0;
 }
 
-static int spliter_vpe_out_config_props(AVFilterLink *outlink)
+static int vpe_spliter_out_config_props(AVFilterLink *outlink)
 {
     AVFilterContext *src = outlink->src;
-    SpliterVpeContext *s = src->priv;
+    VpeSpliterContext *s = src->priv;
     int out_index, pp_index, j;
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
     VpiFrame *frame_hwctx;
 
     if (!src->inputs[0]->hw_frames_ctx) {
-        // for ffplay
         return 0;
     }
 
@@ -195,7 +174,7 @@ static int spliter_vpe_out_config_props(AVFilterLink *outlink)
     return 0;
 }
 
-static int spliter_vpe_query_formats(AVFilterContext *ctx)
+static int vpe_spliter_query_formats(AVFilterContext *ctx)
 {
     AVFilterFormats *fmts_list;
     static const enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_VPE,
@@ -209,17 +188,17 @@ static int spliter_vpe_query_formats(AVFilterContext *ctx)
     return ff_set_common_formats(ctx, fmts_list);
 }
 
-static int spliter_vpe_filter_frame(AVFilterLink *inlink, AVFrame *frame)
+static int vpe_spliter_filter_frame(AVFilterLink *inlink, AVFrame *frame)
 {
     AVHWFramesContext *hwframe_ctx;
     AVVpeFramesContext *vpeframe_ctx;
     AVFilterContext *ctx = inlink->dst;
-    SpliterVpeContext *s = ctx->priv;
+    VpeSpliterContext *s   = ctx->priv;
     int i, j, pp_index, ret = AVERROR_UNKNOWN;
     VpiPicInfo *pic_info;
     VpiFrame *vpi_frame;
 
-    hwframe_ctx = (AVHWFramesContext *)inlink->hw_frames_ctx->data;
+    hwframe_ctx  = (AVHWFramesContext *)inlink->hw_frames_ctx->data;
     vpeframe_ctx = (AVVpeFramesContext *)hwframe_ctx->hwctx;
 
     pp_index = 0;
@@ -297,9 +276,9 @@ err_exit:
     return ret;
 }
 
-#define OFFSET(x) offsetof(SpliterVpeContext, x)
+#define OFFSET(x) offsetof(VpeSpliterContext, x)
 #define FLAGS (AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM)
-static const AVOption spliter_vpe_options[] = { { "outputs",
+static const AVOption vpe_spliter_options[] = { { "outputs",
                                                   "set number of outputs",
                                                   OFFSET(nb_outputs),
                                                   AV_OPT_TYPE_INT,
@@ -309,14 +288,14 @@ static const AVOption spliter_vpe_options[] = { { "outputs",
                                                   FLAGS },
                                                 { NULL } };
 
-AVFILTER_DEFINE_CLASS(spliter_vpe);
+AVFILTER_DEFINE_CLASS(vpe_spliter);
 
-static const AVFilterPad spliter_vpe_inputs[] =
+static const AVFilterPad vpe_spliter_inputs[] =
     { {
           .name         = "default",
           .type         = AVMEDIA_TYPE_VIDEO,
-          .config_props = spliter_vpe_config_props,
-          .filter_frame = spliter_vpe_filter_frame,
+          .config_props = vpe_spliter_config_props,
+          .filter_frame = vpe_spliter_filter_frame,
       },
       { NULL } };
 
@@ -324,12 +303,12 @@ AVFilter ff_vf_spliter_vpe = {
     .name        = "spliter_vpe",
     .description = NULL_IF_CONFIG_SMALL("Filter to split pictures generated by "
                                         "vpe"),
-    .priv_size   = sizeof(SpliterVpeContext),
-    .priv_class  = &spliter_vpe_class,
-    .init        = spliter_vpe_init,
-    .uninit      = spliter_vpe_uninit,
-    .query_formats  = spliter_vpe_query_formats,
-    .inputs         = spliter_vpe_inputs,
+    .priv_size   = sizeof(VpeSpliterContext),
+    .priv_class  = &vpe_spliter_class,
+    .init        = vpe_spliter_init,
+    .uninit      = vpe_spliter_uninit,
+    .query_formats  = vpe_spliter_query_formats,
+    .inputs         = vpe_spliter_inputs,
     .outputs        = NULL,
     .flags          = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
     .flags_internal = FF_FILTER_FLAG_HWFRAME_AWARE,
