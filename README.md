@@ -23,37 +23,37 @@
 
 # 1.Introducing
 
-This project is VeriSilicon VPE plugin development trunk, it keep synced with FFmpeg master branch.
+This project is VPE plugin development trunk, it keep synced with FFmpeg master branch.
 
 ## 1.1 Plugin Summary
 
 | Plugin | Type| Comments| Capbilities|
 |---------------|---------|---------------------------------------------------------------------------------------------------------------|----------------------------------------------------|
 | vpe | device| FFmpeg device which be used by parameter “-init_hw_device”, for example “ffmpeg vpe=dev0:/dev/transcoder0” ||
-| h264enc_vpe| encoder | VeriSilicon H264 hardware encoder interface | Maximum 4K 60Hz, High 10 Profile, levels 1 - 5.2 |
-| hevcenc_vpe| encoder | VeriSilicon HEVC hardware encoder interface | Maximum 4K 60Hz, Main 10 Profile, levels 5.1|
-| vp9enc_vpe | encoder | VeriSilicon VP9 hardware encoder interface| Maximum 4K 60Hz Profile 2 (10-bit)|
-| h264_vpe | decoder | VeriSilicon H264 hardware decoder interface | Maximum 4K 60Hz, High 10 Profile, levels 1 - 5.2 |
-| hevc_vpe | decoder | VeriSilicon HEVC hardware decoder interface | Maximum 4K 60Hz, Main 10 Profile, levels 5.1|
-| vp9_vpe| decoder | VeriSilicon VP9 hardware decoder interface| Maximum 4K 60Hz Profile 2 (10-bit)|
-| vpe_pp | filter| VeriSilicon Post Processing Filter| Upload raw data to hardware encoders, and doing the video downscaling. <br>Suppported raw data format:<br> YUV420P <br> YUV422P<br> NV12<br> NV21<br> YUV420P10LE<br>YUV420P10BE<br>YUV422P10LE<br>YUV422P10BE<br>P010LE<br>P010BE<br>YUV444P<br>RGB24<br>BGR24<br>ARGB<br>RGBA<br>ABGR<br>BGRA<br>|
-| spliter_vpe| filter| VeriSilicon Spliter | Spliter input video to Maximum 4 paths |
-| hwupload_vpe | filter| VeriSilicon Hardware Uploaderfor UYVY422| Upload raw data to hardware encoders. <br>Suppported raw data format:<br> UYVY422|
+| h264enc_vpe| encoder | H264 hardware encoder interface | Maximum 4K 60Hz, High 10 Profile, levels 1 - 5.2 |
+| hevcenc_vpe| encoder | HEVC hardware encoder interface | Maximum 4K 60Hz, Main 10 Profile, levels 5.1|
+| vp9enc_vpe | encoder | VP9 hardware encoder interface| Maximum 4K 60Hz Profile 2 (10-bit)|
+| h264_vpe | decoder | H264 hardware decoder interface | Maximum 4K 60Hz, High 10 Profile, levels 1 - 5.2 |
+| hevc_vpe | decoder | HEVC hardware decoder interface | Maximum 4K 60Hz, Main 10 Profile, levels 5.1|
+| vp9_vpe| decoder | VP9 hardware decoder interface| Maximum 4K 60Hz Profile 2 (10-bit)|
+| vpe_pp | filter| Post Processing Filter| Upload raw data to hardware encoders, and doing the video downscaling. <br>Suppported raw data format:<br> YUV420P <br> YUV422P<br> NV12<br> NV21<br> YUV420P10LE<br>YUV420P10BE<br>YUV422P10LE<br>YUV422P10BE<br>P010LE<br>P010BE<br>YUV444P<br>RGB24<br>BGR24<br>ARGB<br>RGBA<br>ABGR<br>BGRA<br>|
+| spliter_vpe| filter| Spliter | Spliter input video to Maximum 4 paths |
+| hwupload_vpe | filter| Hardware Uploaderfor UYVY422| Upload raw data to hardware encoders. <br>Suppported raw data format:<br> UYVY422|
 
 ## 1.2 Install VPE
-1. Install VPE supported hardware like Solios-X to your computer;
+1. Install VPE supported hardware like Seirios to your computer;
 2. Download VPE driver:
     ```bash
-    # git clone git@github.com:VeriSilicon/vpe.git
+    # git clone git@github.com:emergetech0/vpe.git
     ```
 3. Config tollchain:
     If you are doing cross-compiling, please run ./configure to config tollchain related setting.
 
     ```bash
 
-    ./configure --arch=arm64 --cross=aarch64-linux-gnu- --sysroot=toolchain/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/aarch64-linux-gnu/libc --kernel=/work/imx8mmevk-poky-linux/linux-imx/4.19.35-r0/build
+    ./configure --arch=aarch64 --cross=aarch64-linux-gnu- --sysroot=toolchain/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/aarch64-linux-gnu/libc --kernel=/work/imx8mmevk-poky-linux/linux-imx/4.19.35-r0/build
 
-    arch=arm64
+    arch=aarch64
     cross=aarch64-linux-gnu-
     sysroot=/toolchain/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/aarch64-linux-gnu/libc
     kernel=/work/imx8mmevk-poky-linux/linux-imx/4.19.35-r0/build
@@ -69,7 +69,7 @@ This project is VeriSilicon VPE plugin development trunk, it keep synced with FF
 5. Install VPE:
     * VPE build output is vpe/package;
     * For non-cross build, the VPE libs will be installed to your build server;
-    * For cross build, the VPE lib will be installed to $installpath folder which was specified by "./configure --installpath="; if $installpath is not set, then the VPE will not be installed.
+    * For cross build, the VPE lib will be installed to "$installpath" folder which was specified by "./configure --installpath="; if $installpath is not set, then the VPE will not be installed.
 
     ```bash
     # sudo make install
@@ -77,21 +77,21 @@ This project is VeriSilicon VPE plugin development trunk, it keep synced with FF
 ## 1.3 Install FFmepg
 1. Get FFmpeg source code:
     ```bash
-    # git clone git@github.com:VeriSilicon/ffmpeg.git
+    # git clone git@github.com:emergetech0/ffmpeg.git
     ```
-2. Build FFmpeg - non-cross compiling
+2. Build FFmpeg
     ```bash
     # cd ffmpeg
+    # export LD_LIBRARY_PATH=/usr/lib64
     # ./configure --pkg-config=true --enable-vpe --extra-ldflags="-L/usr/lib/vpe" --extra-libs="-lvpi"
     # make -j8
     ```
 
-2. Build FFmpeg - cross compiling:
-   Please check vpe/build_vpe.sh to learn how to config FFmpeg, or you can run build_vpe.sh to build FFmpeg.
-## 1.4 Build FFmpeg + VPE together with build_vpe.sh
+## 1.4 build_vpe.sh
 
-We provide script to do this job, it's vpe/build_vpe.sh:
-This script will do VPE build + VPE installation + FFmpeg build.
+vpe/build_vpe.sh will do VPE build + VPE installation + FFmpeg build.
+
+###### Note: For cross-compiling, you MUST use this script to do build VPE; also it's the best way to build ffmpeg.
 
 ## 1.5 Run FFmpeg
 ```bash
@@ -474,5 +474,5 @@ echo 300000 > rc.cfg
 
 # 5.Use VPE in K8S
 
-If you's are running VPE on Solios-X platform, please follow below link to know how to let it working under k8s:
-https://github.com/VeriSilicon/solios-x-device-plugin
+If you's are running VPE on Seirios platform, please follow below link to know how to let it working under k8s:
+https://github.com/emergetech0/Seirios-device-plugin
