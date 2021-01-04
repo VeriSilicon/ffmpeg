@@ -111,6 +111,14 @@ const int program_birth_year = 2000;
 
 static FILE *vstats_file;
 
+#define LATENCY_PROFILE
+
+#ifdef LATENCY_PROFILE
+#define NFRAMES  10000
+struct timeval *in_time = NULL;
+struct timeval *out_time = NULL;
+#endif
+
 const char *const forced_keyframes_const_names[] = {
     "n",
     "n_forced",
@@ -172,6 +180,16 @@ static void free_input_threads(void);
    Convert subtitles to video with alpha to insert them in filter graphs.
    This is a temporary solution until libavfilter gets real subtitles support.
  */
+
+#ifdef LATENCY_PROFILE
+static int64_t get_time_duration(struct timeval *ctime, struct timeval *ltime)
+{
+    int64_t duration;
+    duration = (ctime->tv_sec - ltime->tv_sec) * 1000000;
+    duration += ctime->tv_usec - ltime->tv_usec;
+    return duration;
+}
+#endif
 
 static int sub2video_get_blank_frame(InputStream *ist)
 {
@@ -1389,6 +1407,11 @@ static void do_video_out(OutputFile *of,
          * But there may be reordering, so we can't throw away frames on encoder
          * flush, we need to limit them here, before they go into encoder.
          */
+#ifdef LATENCY_PROFILE
+        if (ost->frame_number < NFRAMES) {
+            gettimeofday(out_time + ost->frame_number, NULL);
+        }
+#endif
         ost->frame_number++;
 
         if (vstats_filename && frame_size)
@@ -1735,6 +1758,11 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
             fps = t > 1 ? frame_number / t : 0;
             av_bprintf(&buf, "frame=%5d fps=%3.*f q=%3.1f ",
                      frame_number, fps < 9.95, fps, q);
+
+#ifdef LATENCY_PROFILE
+            av_bprintf(&buf, "lantency=%3dms ", get_time_duration(out_time + frame_number-1,
+                                     in_time + frame_number-1) / 1000);
+#endif
             av_bprintf(&buf_script, "frame=%d\n", frame_number);
             av_bprintf(&buf_script, "fps=%.2f\n", fps);
             av_bprintf(&buf_script, "stream_%d_%d_q=%.1f\n",
@@ -2443,8 +2471,13 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output, int64_
     if(ist->top_field_first>=0)
         decoded_frame->top_field_first = ist->top_field_first;
 
-    ist->frames_decoded++;
+#ifdef LATENCY_PROFILE
+    if (ist->frames_decoded < NFRAMES) {
+        gettimeofday(in_time + ist->frames_decoded, NULL);
+    }
+#endif
 
+    ist->frames_decoded++;
     if (ist->hwaccel_retrieve_data && decoded_frame->format == ist->hwaccel_pix_fmt) {
         err = ist->hwaccel_retrieve_data(ist->dec_ctx, decoded_frame);
         if (err < 0)
@@ -4915,6 +4948,19 @@ int main(int argc, char **argv)
     int i, ret;
     BenchmarkTimeStamps ti;
 
+#ifdef LATENCY_PROFILE
+    in_time = malloc(NFRAMES * sizeof(struct timeval));
+    if (!in_time) {
+        av_log(NULL, AV_LOG_ERROR, "malloc error\n");
+        return -1;
+    }
+    out_time = malloc(NFRAMES * sizeof(struct timeval));
+    if (!out_time) {
+        av_log(NULL, AV_LOG_ERROR, "malloc error\n");
+        return -1;
+    }
+#endif
+
     init_dynload();
 
     register_exit(ffmpeg_cleanup);
@@ -4979,5 +5025,10 @@ int main(int argc, char **argv)
         exit_program(69);
 
     exit_program(received_nb_signals ? 255 : main_return_code);
+
+#ifdef LATENCY_PROFILE
+    free(in_time);
+    free(out_time);
+#endif
     return main_return_code;
 }
