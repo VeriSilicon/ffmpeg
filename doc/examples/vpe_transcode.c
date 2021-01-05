@@ -97,9 +97,9 @@ static void statistic_info(int force)
         duration = get_time_duration(&curr_time, &start_time);
         fps      = (double)frame_out_cnt /
               ((double)duration / (1 * 1000 * 1000));
-        av_log(NULL, AV_LOG_INFO, "\rframe %d, fps=%0.1f", frame_out_cnt, fps);
+        av_log(NULL, AV_LOG_INFO, "\rframe %5d, fps=%3.1f", frame_out_cnt, fps);
 #ifdef LATENCY_PROFILE
-        av_log(NULL, AV_LOG_INFO, " latency=%dms",
+        av_log(NULL, AV_LOG_INFO, " latency=%3dms ",
                get_time_duration(out_time+frame_out_cnt-1, in_time+frame_out_cnt-1)/1000);
 #endif
         last_time = curr_time;
