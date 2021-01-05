@@ -1760,7 +1760,7 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
                      frame_number, fps < 9.95, fps, q);
 
 #ifdef LATENCY_PROFILE
-            av_bprintf(&buf, "lantency=%3dms ", get_time_duration(out_time + frame_number-1,
+            av_bprintf(&buf, "latency=%3dms ", get_time_duration(out_time + frame_number-1,
                                      in_time + frame_number-1) / 1000);
 #endif
             av_bprintf(&buf_script, "frame=%d\n", frame_number);
