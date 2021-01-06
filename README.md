@@ -165,8 +165,8 @@ Note: low_res is also for vpe_pp filter, the only difference is only the streams
 ||| int| Input picture rate denominator. | [1...1048575] | 1|
 | -r (for output) | | int| Output picture rate numerator.| [1...1048575] | input |
 ||| int| Output picture rate denominator.| [1...1048575] | input |
-| -profile:v| | int| Encode profile: <br><br>HEVC - main/main still picture/main10 <br>H264 - baseline/main/<br>high/high10 | <br>HEVC:[0-2]<br> H264:[9-12] | HEVC: 0 <br> H264: 10 |
-| -level| | int| Encode level | For HEVC - <br>[1.0/2.0/2.1/3.0/<br>3.1/4.0/ 4.1/5.0/5.1] <br><br>For H264:<br>[1/1b/1.1/1.2/1.3/2/2.1<br>/2.2/3/3.1/3.2/4/4.1/<br>4.2/5/5.1/5.2] | HEVC: 5.1 <br>H264: 5.2|
+| -profile:v| | string| Encode profile  |HEVC - main/still/main10 <br><br>H264 - base/main/<br>high/high10 | HEVC: main <br> H264: main |
+| -level| | string| Encode level | HEVC - <br>[1.0/2.0/2.1/3.0/<br>3.1/4.0/ 4.1/5.0/5.1] <br><br>H264:<br>[1/1b/1.1/1.2/1.3/2/2.1<br>/2.2/3/3.1/3.2/4/4.1/<br>4.2/5/5.1/5.2] | HEVC: 5.1 <br>H264: 5.2|
 | -crf| | int| VCE Constant rate factor mode. Works with lookahead turned on. | [-1...51]| -1|
 | -force_idr| | int| If forcing keyframes, force them as IDR frames... | [0...1]| 0|
 | -preset | | string | Encoding preset.| [superfast<br>fast<br>medium<br>slow<br>superslow] | fast|
