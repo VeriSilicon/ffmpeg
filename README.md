@@ -59,6 +59,9 @@ This project is VPE plugin development trunk, it keep synced with FFmpeg master 
     kernel=/work/imx8mmevk-poky-linux/linux-imx/4.19.35-r0/build
     debug=n
     Create VPE build config file successfully!
+
+    ## lunch the config file
+    . config.mk
     ```
 4. Build VPE:
     then you can build VPE
@@ -67,8 +70,8 @@ This project is VPE plugin development trunk, it keep synced with FFmpeg master 
     ```
 
 5. Install VPE:
-    * VPE build output is vpe/package;
-    * For non-cross build, the VPE libs will be installed to your build server;
+    * All of the VPE output files will be copied to vpe/package;
+    * For non-cross build, the VPE lib will be installed to "$installpath" folder which was specified by "./configure --installpath="; if "$installpath" is not set, then the VPE will be installed to your system folder;
     * For cross build, the VPE lib will be installed to "$installpath" folder which was specified by "./configure --installpath="; if $installpath is not set, then the VPE will not be installed.
 
     ```bash
@@ -90,9 +93,7 @@ This project is VPE plugin development trunk, it keep synced with FFmpeg master 
 ## 1.4 build_vpe.sh
 
 vpe/build_vpe.sh will do VPE build + VPE installation + FFmpeg build.
-
-###### Note: For cross-compiling, you MUST use this script to do build VPE; also it's the best way to build ffmpeg.
-
+It's recommended for cross-compiling to build VPE+FFmpeg together.
 ## 1.5 Run FFmpeg
 ```bash
 ./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -c:v h264_vpe -transcode 1 \
