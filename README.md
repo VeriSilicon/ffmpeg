@@ -36,10 +36,13 @@ This project is VPE plugin development trunk, it keep synced with FFmpeg master 
 | h264_vpe | decoder | H264 hardware decoder interface | Maximum 4K 60Hz, High 10 Profile, levels 1 - 5.2 |
 | hevc_vpe | decoder | HEVC hardware decoder interface | Maximum 4K 60Hz, Main 10 Profile, levels 5.1|
 | vp9_vpe| decoder | VP9 hardware decoder interface| Maximum 4K 60Hz Profile 2 (10-bit)|
-| vpe_pp | filter| Post Processing Filter| Upload raw data to hardware encoders, and doing the video downscaling. <br>Suppported raw data format:<br> YUV420P <br> YUV422P<br> NV12<br> NV21<br> YUV420P10LE<br>YUV420P10BE<br>YUV422P10LE<br>YUV422P10BE<br>P010LE<br>P010BE<br>YUV444P<br>RGB24<br>BGR24<br>ARGB<br>RGBA<br>ABGR<br>BGRA<br>|
+| vpe_pp | filter| Post Processing Filter| Upload raw data to hardware encoders, and doing the video downscaling, <br>Suppported raw data format:<br> YUV420P <br> YUV422P<br> NV12<br> NV21<br> YUV420P10LE<br>YUV420P10BE<br>YUV422P10LE<br>YUV422P10BE<br>P010LE<br>P010BE<br>YUV444P<br>RGB24<br>BGR24<br>ARGB<br>RGBA<br>ABGR<br>BGRA<br>|
+| hwupload_vpe | filter| Hardware Uploader | Upload raw data to hardware encoders. <br>Suppported raw data format: UYVY422<br> YUV420P <br> YUV422P<br> NV12<br> NV21<br> YUV420P10LE<br>YUV420P10BE<br>YUV422P10LE<br>YUV422P10BE<br>P010LE<br>P010BE<br>YUV444P<br>RGB24<br>BGR24<br>ARGB<br>RGBA<br>ABGR<br>BGRA<br>|
 | spliter_vpe| filter| Spliter | Spliter input video to Maximum 4 paths |
-| hwupload_vpe | filter| Hardware Uploaderfor UYVY422| Upload raw data to hardware encoders. <br>Suppported raw data format:<br> UYVY422|
 
+Below is the diagram:
+
+![VPE Plugin Diagram](https://raw.githubusercontent.com/VeriSilicon/vpe/vs_develop/doc/vpe.svg)
 ## 1.2 Install VPE
 1. Install VPE supported hardware like Seirios to your computer;
 2. Download VPE driver:
@@ -309,6 +312,14 @@ Note: low_res is almost same which defined in [decoder filter](#Decoder), the on
 
 ## Transcoding
 
+One Output Diagram:
+
+![](https://raw.githubusercontent.com/VeriSilicon/vpe/vs_develop/doc/transcoding_one_output.svg)
+
+Four Output Diagram:
+
+![](https://raw.githubusercontent.com/VeriSilicon/vpe/vs_develop/doc/transcoding_four_outputs.svg)
+
 | Case | Target | Source | Output | 2 Pass | Command Line Example|
 |------|--------|--------|------------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | ID | Format | Format | Numbers| Encoding | |
@@ -352,6 +363,14 @@ Note: low_res is almost same which defined in [decoder filter](#Decoder), the on
 
 ## Decoding Only
 
+One Output Diagram:
+
+![](https://raw.githubusercontent.com/VeriSilicon/vpe/vs_develop/doc/decoding_one_output.svg)
+
+Four Output Diagram:
+
+![](https://raw.githubusercontent.com/VeriSilicon/vpe/vs_develop/doc/decoding_four_outputs.svg)
+
 | Case | Target | Source | Output| 2 Pass | Command Line Example |
 |------|--------|--------|---------|----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | ID | Format | Format | Numbers | Encoding ||
@@ -361,7 +380,13 @@ Note: low_res is almost same which defined in [decoder filter](#Decoder), the on
 | 41 | nv12 | vp9| 4 | NA | ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 -c:v vp9_vpe -low_res "4:(1920x1080)(1280x720)(640x360)" -i ${INPUT_FILE_VP9} -filter_complex 'spliter_vpe=outputs=4[1][2][3][4],[1]hwdownload,format=nv12[a],[2]hwdownload,format=nv12[b],[3]hwdownload,format=nv12[c],[4]hwdownload,format=nv12[d]' -map '[a]' out0.yuv -map '[b]' out1.yuv -map '[c]' out2.yuv -map '[d]' out3.yuv |
 
 ## Encoding Only
+One Output Diagram:
 
+![](https://raw.githubusercontent.com/VeriSilicon/vpe/vs_develop/doc/encoding_one_output.svg)
+
+Four Output Diagram:
+
+![](https://raw.githubusercontent.com/VeriSilicon/vpe/vs_develop/doc/encoding_four_outputs.svg)
 | Case | Target | Source| Output| 2 Pass | Command Line Example|
 |------|--------|---------|---------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | ID | Format | Format| Numbers | Encoding | |
