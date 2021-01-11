@@ -115,6 +115,8 @@ static FILE *vstats_file;
 
 #ifdef LATENCY_PROFILE
 #define NFRAMES  10000
+int in_number = 0;
+int out_number = 0;
 struct timeval *in_time = NULL;
 struct timeval *out_time = NULL;
 #endif
@@ -1396,6 +1398,12 @@ static void do_video_out(OutputFile *of,
             frame_size = pkt.size;
             output_packet(of, &pkt, ost, 0);
 
+#ifdef LATENCY_PROFILE
+            if (out_number < NFRAMES) {
+                gettimeofday(out_time + out_number, NULL);
+                out_number ++;
+            }
+#endif
             /* if two pass, output log */
             if (ost->logfile && enc->stats_out) {
                 fprintf(ost->logfile, "%s", enc->stats_out);
@@ -1407,11 +1415,6 @@ static void do_video_out(OutputFile *of,
          * But there may be reordering, so we can't throw away frames on encoder
          * flush, we need to limit them here, before they go into encoder.
          */
-#ifdef LATENCY_PROFILE
-        if (ost->frame_number < NFRAMES) {
-            gettimeofday(out_time + ost->frame_number, NULL);
-        }
-#endif
         ost->frame_number++;
 
         if (vstats_filename && frame_size)
@@ -1760,8 +1763,8 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
                      frame_number, fps < 9.95, fps, q);
 
 #ifdef LATENCY_PROFILE
-            av_bprintf(&buf, "latency=%3dms ", get_time_duration(out_time + frame_number-1,
-                                     in_time + frame_number-1) / 1000);
+            av_bprintf(&buf, "latency=%3dms ", get_time_duration(out_time + out_number-1,
+                                     in_time + out_number-1) / 1000);
 #endif
             av_bprintf(&buf_script, "frame=%d\n", frame_number);
             av_bprintf(&buf_script, "fps=%.2f\n", fps);
@@ -2472,8 +2475,9 @@ static int decode_video(InputStream *ist, AVPacket *pkt, int *got_output, int64_
         decoded_frame->top_field_first = ist->top_field_first;
 
 #ifdef LATENCY_PROFILE
-    if (ist->frames_decoded < NFRAMES) {
-        gettimeofday(in_time + ist->frames_decoded, NULL);
+    if (in_number < NFRAMES) {
+        gettimeofday(in_time + in_number, NULL);
+        in_number++;
     }
 #endif
 
