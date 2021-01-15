@@ -11,7 +11,6 @@
     * [VP9 Encoder](#VP9-Encoder)
     * [Spliter](#Spliter)
     * [PP](#PP)
-    * [HWuploader](#HWuploader)
 * [3.FFmpeg Command Line Examples](#3.FFmpeg-Command-Line-Examples)
     * [Transcoding](#Transcoding)
     * [Decoding Only](#Decoding-Only)
@@ -37,7 +36,6 @@ This project is VPE plugin development trunk, it keep synced with FFmpeg master 
 | hevc_vpe | decoder | HEVC hardware decoder interface | Maximum 4K 60Hz, Main 10 Profile, levels 5.1|
 | vp9_vpe| decoder | VP9 hardware decoder interface| Maximum 4K 60Hz Profile 2 (10-bit)|
 | vpe_pp | filter| Post Processing Filter| Upload raw data to hardware encoders, and doing the video downscaling, <br>Suppported raw data format:<br> YUV420P <br> YUV422P<br> NV12<br> NV21<br> YUV420P10LE<br>YUV420P10BE<br>YUV422P10LE<br>YUV422P10BE<br>P010LE<br>P010BE<br>YUV444P<br>RGB24<br>BGR24<br>ARGB<br>RGBA<br>ABGR<br>BGRA<br>|
-| hwupload_vpe | filter| Hardware Uploader | Upload raw data to hardware encoders. <br>Suppported raw data format: UYVY422<br> YUV420P <br> YUV422P<br> NV12<br> NV21<br> YUV420P10LE<br>YUV420P10BE<br>YUV422P10LE<br>YUV422P10BE<br>P010LE<br>P010BE<br>YUV444P<br>RGB24<br>BGR24<br>ARGB<br>RGBA<br>ABGR<br>BGRA<br>|
 | spliter_vpe| filter| Spliter | Spliter input video to Maximum 4 paths |
 
 Below is the diagram:
@@ -171,6 +169,7 @@ Note: low_res is also for vpe_pp filter, the only difference is only the streams
 | -force_idr| | int| If forcing keyframes, force them as IDR frames... | [0...1]| 0|
 | -preset | | string | Encoding preset.| [superfast<br>fast<br>medium<br>slow<br>superslow] | fast|
 | -enc_params | | | |
+||low_delay | int| Low lantency mode; 1 means enable low lantency mode.| [0...1] | 0 |
 ||intra_pic_rate| int| I frame interval in frames. If intra_pic_rate and force_idr are not specified, then there will be only one I frame be encoded. | [0...INT_MAX]| 0|
 ||bitrate_window | int| Bitrate window length in frames.| [1...300] | intra_pic_rate |
 ||intra_qp_delta| int| Intra QP delta, QP difference between target QP and intra frame QP. | [-51...51] | -5|
@@ -188,10 +187,10 @@ Note: low_res is also for vpe_pp filter, the only difference is only the streams
 ||bit_var_range_P| int| Percent variations over average bits per frame for P frame. | [10...10000]| 10000|
 ||bit_var_range_B| int| Percent variations over average bits per frame for B frame. | [10...10000]| 10000|
 ||pic_rc | int| Picture rate control enable.| 0 - OFF<br>1 - ON| 0|
-||pic_rc_config | string| Picture rate config file. Plain text number is required. for example "100000".| [10000...60000000] | -b:v |
+||pic_rc_config | string| Picture rate config file, in plain text file mode, include fps/resolution/bitrate per frame control. <br>config file format example: <br>bsp:(100000)<br>res:(1280)(720)<br>fps:(25)(1).[sample file](https://raw.githubusercontent.com/VeriSilicon/vpe/vs_develop/doc/rc_example.cfg)| bps:[10000...60000000]<br>res:[lower than source]<br>fps:[0...65535] | NA |
 ||ctb_rc | int| CTB QP adjustment mode for Rate Control and Subjective Quality. | [0...1] | 0|
-||tol_ctb_rc_inter | float| Tolerance of Ctb Rate Control for INTER frames. | Float point number, <br> Min = targetPicSize/<br>(1+tolctb_rcInter)<br>Max = targetPicSize*<br>(1+tolctb_rcInter)]; <br><br>A negative number <br>means no bit rate limit<br> in Ctb Rc| 0.0 |
-||tol_ctb_rc_intra | float| Tolerance of Ctb Rate Control for INTRA frames. | Float point number | -1.0 |
+||tol_ctb_rc_inter | float| Tolerance of Ctb Rate Control for INTER frames.It controls the rate tolerance of each frame when ctbRc=2 or 3.<br>For example, if the code rate algorithm allocated to the B/P frame is 100KB, then if tol_ctb_rc_inter is 0.1, then when encoding this frame, set the maximum size to 100KB\*1.1 and the minimum to be 100KB\*0.9. | Float point number, <br> Min = targetPicSize/<br>(1+tolctb_rcInter)<br>Max = targetPicSize*<br>(1+tolctb_rcInter)]; <br><br>A negative number <br>means no bit rate limit<br> in Ctb Rc| 0.0 |
+||tol_ctb_rc_intra | float| Tolerance of Ctb Rate Control for INTRA frames.It controls the rate tolerance of each frame when ctbRc=2 or 3.<br>For example, if the code rate algorithm allocated to the I frame is 100KB, then if tol_ctb_rc_intra is 0.1, then when encoding this frame, set the maximum size to 100KB\*1.1 and the minimum to be 100KB\*0.9 | Float point number | -1.0 |
 ||ctb_row_qp_step| int| The maximum accumulated QP adjustment step per CTB Row allowed by Ctb Rate Control. | (ctbRowQpStep / Ctb_per_Row) <br>and limited by <br>maximum = 4 | H264: 4; <br>HEVC: 16|
 ||pic_qp_delta_range | int| Qp_Delta Range in Picture RC| [Min:Max] <br>Min - [-1...-10]<br>Max - [1...10] | Min:-2; Max:3 |
 ||hrd_conformance| int| Enable HRD conformance. Uses standard defined model to limit bitrate variance. | [0...1] | 0|
@@ -248,6 +247,7 @@ Example:
 | -profile:v | | int| Encoder profile | [0...3] | 0|
 | -preset | | string | Encoding preset.| superfast<br>fast<br>medium<br>slow<br>superslow | fast |
 | -enc_params
+| |low_delay | int| Low lantency mode; 1 means enable low lantency mode.| [0...1] | 0 |
 | | effort| int| Encoder effort level.| [0...5]<br> 0 - fastest <br>5 - best quality | 0|
 | | lag_in_frames | int| Number of frames to lag. Up to 25.| [0...25]| 7|
 | | passes| int| Number of passes.| [1...2] | 1|
@@ -302,10 +302,6 @@ Example:
 Note: low_res is almost same which defined in [decoder filter](#Decoder), the only difference is the streams numbers is not required in vpe_pp filer, for example:
 > low_res=(1920x1080)(1280x720)(640x360).
 
-## HWuploader
-| Option | Sub Option | Type | Description | Range | Default Value |
-|--------|------------|------|-------------|----------------------|---------------|
-| /||/| / | /| / |
 #
 
 # 3.FFmpeg Command Line Examples
@@ -422,7 +418,7 @@ The downscaled video will be used as the input of encoder to do second pass enco
 ## Capture Camera and start RTP streaming:
 ###### Streaming:
 ```bash
-sudo ./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -i /dev/video0 -filter_complex "hwupload_vpe"
+sudo ./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -i /dev/video0 -filter_complex "hwupload"
 -c:v h264enc_vpe -preset fast -b:v 500000
 -enc_params "intra_pic_rate=15" -f rtp_mpegts rtp://10.10.3.88:9999
 ```
@@ -483,7 +479,7 @@ ffplay rtmp://10.10.3.88:1935/live/500k
 ```bash
 ./ffmpeg -y -report -init_hw_device vpe=dev0:/dev/transcoder0 \
 -s 3840x2160 -pix_fmt yuv420p10le -i 4k10bithdr.yuv \
--filter_complex "hwupload_vpe" -c:v hevcenc_vpe  \
+-filter_complex "hwupload" -c:v hevcenc_vpe  \
 -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc \
 -enc_params "mastering_display_en=1:display_pri_x0=13250:display_pri_y0=34500:display_pri_x1=7500:display_pri_y1=3000:display_pri_x2=34000:display_pri_y2=16000:white_point_x=15635:white_point_y=16450:min_luminance=0:max_luminance=10000000:light_level_en=1:max_content_light_level=1000:max_pic_average_light_level=640" 4khdr.hevc
 ```
@@ -492,7 +488,7 @@ ffplay rtmp://10.10.3.88:1935/live/500k
 Need to add "pic_rc=1:pic_rc_config=rc.cfg" into -enc_params, then user can change file "rc.cfg" to put target bitrate:
 ```bash
 sudo ./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -i /dev/video0
--filter_complex "hwupload_vpe" -c:v h264enc_vpe -preset fast -b:v 500000
+-filter_complex "hwupload" -c:v h264enc_vpe -preset fast -b:v 500000
 -enc_params "intra_pic_rate=15:pic_rc=1:pic_rc_config=rc.cfg"
 -f rtp_mpegts rtp://10.10.3.88:9999
 echo 300000 > rc.cfg
