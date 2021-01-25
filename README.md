@@ -18,6 +18,12 @@
     * [Transcoding with parameters](#Transcoding-with-parameters)
     * [Downscaling First Pass](#Downscaling-First-Pass)
 * [4.Online Typical Use Case](#5.Online-Typical-Use-Case)
+    * [Capture Camera and start RTP streaming](#Capture-Camera-and-start-RTP-streaming)
+    * [RTMP Transcoding](#RTMP-Transcoding)
+    * [4K source multiple outputs streaming](#4K-source-multiple-outputs-streaming)
+    * [Encoding HDR10 stream](#Encoding-HDR10-stream)
+    * [Encoding h264 hevc with dynamic bitrate fps resolution change](#Encoding-h264-hevc-with-dynamic-bitrate-fps-resolution-change)
+    * [Encoding h264 hevc with low latency](#Encoding-h264-hevc-with-low-latency)
 * [5.Use VPE in K8s](#4.Use-VPE-in-K8S)
 
 # 1.Introducing
@@ -97,7 +103,7 @@ vpe/build_vpe.sh will do VPE build + VPE installation + FFmpeg build.
 It's recommended for cross-compiling to build VPE+FFmpeg together.
 ## 1.5 Run FFmpeg
 ```bash
-./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -c:v h264_vpe -transcode 1 \
+ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -c:v h264_vpe -transcode 1 \
 -i ${INPUT_FILE_H264} -c:v h264enc_vpe out0.h264
 ```
 
@@ -187,7 +193,7 @@ Note: low_res is also for vpe_pp filter, the only difference is only the streams
 ||bit_var_range_P| int| Percent variations over average bits per frame for P frame. | [10...10000]| 10000|
 ||bit_var_range_B| int| Percent variations over average bits per frame for B frame. | [10...10000]| 10000|
 ||pic_rc | int| Picture rate control enable.| 0 - OFF<br>1 - ON| 0|
-||pic_rc_config | string| Picture rate config file, in plain text file mode, include fps/resolution/bitrate per frame control. <br>config file format example: <br>bsp:(100000)<br>res:(1280)(720)<br>fps:(25)(1).[sample file](https://raw.githubusercontent.com/VeriSilicon/vpe/vs_develop/doc/rc_example.cfg)| bps:[10000...60000000]<br>res:[lower than source]<br>fps:[0...65535] | NA |
+||pic_rc_config | string| Picture rate config file, in plain text file mode, include fps/resolution/bitrate per frame control. <br><br>config file format example: <br>bsp:(100000)<br>res:(1280)(720)<br>fps:(25)(1).<br><br> **Note: fps on-the-fly change is only available when vpe_pp was connected.** <br><br>[sample config file](https://raw.githubusercontent.com/VeriSilicon/vpe/vs_develop/doc/rc_example.cfg)| bps:[10000...60000000]<br><br>res:[width and height lower than source]<br><br>fps:[lower than source fps] | NA |
 ||ctb_rc | int| CTB QP adjustment mode for Rate Control and Subjective Quality. | [0...1] | 0|
 ||tol_ctb_rc_inter | float| Tolerance of Ctb Rate Control for INTER frames.It controls the rate tolerance of each frame when ctbRc=2 or 3.<br>For example, if the code rate algorithm allocated to the B/P frame is 100KB, then if tol_ctb_rc_inter is 0.1, then when encoding this frame, set the maximum size to 100KB\*1.1 and the minimum to be 100KB\*0.9. | Float point number, <br> Min = targetPicSize/<br>(1+tolctb_rcInter)<br>Max = targetPicSize*<br>(1+tolctb_rcInter)]; <br><br>A negative number <br>means no bit rate limit<br> in Ctb Rc| 0.0 |
 ||tol_ctb_rc_intra | float| Tolerance of Ctb Rate Control for INTRA frames.It controls the rate tolerance of each frame when ctbRc=2 or 3.<br>For example, if the code rate algorithm allocated to the I frame is 100KB, then if tol_ctb_rc_intra is 0.1, then when encoding this frame, set the maximum size to 100KB\*1.1 and the minimum to be 100KB\*0.9 | Float point number | -1.0 |
@@ -386,8 +392,8 @@ Four Output Diagram:
 | Case | Target | Source| Output| 2 Pass | Command Line Example|
 |------|--------|---------|---------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | ID | Format | Format| Numbers | Encoding | |
-| 42 | h264 | yuv420p | 1 | N| ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 -s 1920x1080 -pix_fmt yuv420p -i ${INPUT_FILE_RAW_420P} -filter_complex 'vpe_pp' -c:v hevcenc_vpe -preset superfast -b:v 10000000 out0.h264  |
-| 43 | h264 | yuv420p | 4 | N| ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 -s 1920x1080 -pix_fmt yuv420p -i ${INPUT_FILE_RAW_420P} -filter_complex 'vpe_pp=outputs=4:low_res=(1920x1080)(1280x720)(640x360),spliter_vpe=outputs=4[out0][out1][out2][out3]' -map '[out0]' -c:v hevcenc_vpe -preset superfast -b:v 10000000 out0.h264 -map '[out1]' -c:v hevcenc_vpe -preset superfast -b:v 5000000 out1.h264 -map '[out2]' -c:v hevcenc_vpe -preset superfast -b:v 3000000 out2.h264 -map '[out3]' -c:v hevcenc_vpe -preset superfast -b:v 500000 out3.h264 |
+| 42 | h264 | yuv420p | 1 | N| ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 -s 1920x1080 -pix_fmt yuv420p -i ${INPUT_FILE_RAW_420P} -filter_complex 'vpe_pp' -c:v h264enc_vpe -preset superfast -b:v 10000000 out0.h264  |
+| 43 | h264 | yuv420p | 4 | N| ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 -s 1920x1080 -pix_fmt yuv420p -i ${INPUT_FILE_RAW_420P} -filter_complex 'vpe_pp=outputs=4:low_res=(1920x1080)(1280x720)(640x360),spliter_vpe=outputs=4[out0][out1][out2][out3]' -map '[out0]' -c:v h264enc_vpe -preset superfast -b:v 10000000 out0.h264 -map '[out1]' -c:v h264enc_vpe -preset superfast -b:v 5000000 out1.h264 -map '[out2]' -c:v h264enc_vpe -preset superfast -b:v 3000000 out2.h264 -map '[out3]' -c:v h264enc_vpe -preset superfast -b:v 500000 out3.h264 |
 | 44 | hevc | yuv420p | 4 | N| ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 -s 1920x1080 -pix_fmt yuv420p -i ${INPUT_FILE_RAW_420P} -filter_complex 'vpe_pp=outputs=4:low_res=(1920x1080)(1280x720)(640x360),spliter_vpe=outputs=4[out0][out1][out2][out3]' -map '[out0]' -c:v hevcenc_vpe -preset superfast -b:v 10000000 out0.hevc -map '[out1]' -c:v hevcenc_vpe -preset superfast -b:v 5000000 out1.hevc -map '[out2]' -c:v hevcenc_vpe -preset superfast -b:v 3000000 out2.hevc -map '[out3]' -c:v hevcenc_vpe -preset superfast -b:v 500000 out3.hevc|
 | 45 | vp9| yuv420p | 4 | N| ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 -r 30 -s 1920x1080 -pix_fmt yuv420p -i ${INPUT_FILE_RAW_420P} -filter_complex 'vpe_pp=outputs=4:low_res=(1920x1080)(1280x720)(640x360),spliter_vpe=outputs=4[out0][out1][out2][out3]' -map '[out0]' -c:v vp9enc_vpe -preset superfast -b:v 10000000 out0.ivf -map '[out1]' -c:v vp9enc_vpe -preset superfast -b:v 5000000 out1.ivf -map '[out2]' -c:v vp9enc_vpe -preset superfast -b:v 3000000 out2.ivf -map '[out3]' -c:v vp9enc_vpe -preset superfast -b:v 500000 out3.ivf |
 | 46 | h264 | rgb24 | 4 | Y| ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 -r 30 -s 1920x1080 -pix_fmt rgb24 -i ${INPUT_FILE_RAW_RGB24} -filter_complex 'vpe_pp=outputs=4:low_res=(d2)(d4)(d8),spliter_vpe=outputs=4[out0][out1][out2][out3]' -map '[out0]' -c:v h264enc_vpe -preset medium -b:v 10000000 out0.h264 -map '[out1]' -c:v h264enc_vpe -preset medium -b:v 5000000 out1.h264 -map '[out2]' -c:v h264enc_vpe -preset medium -b:v 3000000 out2.h264 -map '[out3]' -c:v h264enc_vpe -preset medium -b:v 500000 out3.h264|
@@ -415,10 +421,10 @@ The downscaled video will be used as the input of encoder to do second pass enco
 | 54 | h264 | hevc | 1 | Y| ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1 -low_res "1:(d2)" -i ${INPUT_FILE_HEVC} -c:v h264enc_vpe-preset medium -b:v 10000000 out0.h264 |
 
 # 4.Online Typical Use Case
-## Capture Camera and start RTP streaming:
+## Capture Camera and start RTP streaming
 ###### Streaming:
 ```bash
-sudo ./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -i /dev/video0 -filter_complex "hwupload"
+sudo ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -i /dev/video0 -filter_complex "hwupload"
 -c:v h264enc_vpe -preset fast -b:v 500000
 -enc_params "intra_pic_rate=15" -f rtp_mpegts rtp://10.10.3.88:9999
 ```
@@ -426,11 +432,12 @@ sudo ./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -i /dev/video0 -filte
 ```bash
 ffplay rtp://10.10.3.88:9999
 ```
-## Capture RTMP straming, do transcoding, streamning to another RTMP server:
+## RTMP Transcoding
 You need to setup RTMP streaming server first
 ###### Streaming:
 ```bash
-./ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v h264_vpe -transcode 1 -i http://ivi.bupt.edu.cn/hls/cctv5phd.m3u8
+ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v h264_vpe \
+-transcode 1 -i http://ivi.bupt.edu.cn/hls/cctv5phd.m3u8 \
 -c:v h264enc_vpe -preset medium -b:v 3000000 -level 5.1 -profile:v high -c:a copy
 -f flv rtmp://10.10.3.88:1935/live/livestream
 ```
@@ -439,26 +446,11 @@ You need to setup RTMP streaming server first
 ffplay rtmp://10.10.3.88:1935/live/livestream
 ```
 
-## Downscale 4K HEVC streaming to H264 1080p, and streamning it to RTMP server:
+## 4K source multiple outputs streaming
 You need to setup RTMP streaming server first
 ###### Streaming:
 ```bash
-./ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1 -low_res "2:(1920x1080)" \
--i ~/work/stream/LaLaLand_cafe_4K.mkv -filter_complex 'spliter_vpe=outputs=2[out0][out1]' \
--map '[out0]' -f null /dev/null -map '[out1]' -c:v h264enc_vpe \
--enc_params "intra_pic_rate=15" -preset medium -b:v 2000000 \
--map 0:a -f flv rtmp://10.10.3.88:1935/live/livestream
-```
-###### Play
-```bash
-ffplay rtmp://10.10.3.88:1935/live/livestream
-```
-
-## Downscale 4K HEVC streaming to 4 small stream, and streamning it to RTMP server:
-You need to setup RTMP streaming server first
-###### Streaming:
-```bash
-./ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1 \
+ffmpeg -y -re -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1 \
 -low_res "4:(1920x1080)(1280x720)(640x360)" -i ~/work/stream/LaLaLand_cafe_4K.mkv \
 -filter_complex 'spliter_vpe=outputs=4[out0][out1][out2][out3]' \
 -map '[out0]' -c:v h264enc_vpe -preset fast -b:v 10000000 -map 0:a -f flv rtmp://10.10.3.88:1935/live/10M  \
@@ -474,26 +466,69 @@ ffplay rtmp://10.10.3.88:1935/live/3M
 ffplay rtmp://10.10.3.88:1935/live/500k
 ```
 
-## Encode HDR10 stream:
+## Encoding HDR10 stream
 
 ```bash
-./ffmpeg -y -report -init_hw_device vpe=dev0:/dev/transcoder0 \
+ffmpeg -y -report -init_hw_device vpe=dev0:/dev/transcoder0 \
 -s 3840x2160 -pix_fmt yuv420p10le -i 4k10bithdr.yuv \
 -filter_complex "hwupload" -c:v hevcenc_vpe  \
 -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc \
 -enc_params "mastering_display_en=1:display_pri_x0=13250:display_pri_y0=34500:display_pri_x1=7500:display_pri_y1=3000:display_pri_x2=34000:display_pri_y2=16000:white_point_x=15635:white_point_y=16450:min_luminance=0:max_luminance=10000000:light_level_en=1:max_content_light_level=1000:max_pic_average_light_level=640" 4khdr.hevc
 ```
 
-## Enable dynamic bitrate change through config file:
-Need to add "pic_rc=1:pic_rc_config=rc.cfg" into -enc_params, then user can change file "rc.cfg" to put target bitrate:
+## Encoding h264 hevc with dynamic bitrate fps resolution change
+Need to add **"pic_rc=1:pic_rc_config=rc.cfg"** into -enc_params, then user can change file "rc.cfg" to put target bitrate:
 ```bash
-sudo ./ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -i /dev/video0
--filter_complex "hwupload" -c:v h264enc_vpe -preset fast -b:v 500000
--enc_params "intra_pic_rate=15:pic_rc=1:pic_rc_config=rc.cfg"
--f rtp_mpegts rtp://10.10.3.88:9999
-echo 300000 > rc.cfg
+sudo ./ffmpeg -y -report -init_hw_device vpe=dev0:/dev/transcoder0 -vsync 0 -i /dev/video0 -filter_complex "format=nv12,vpe_pp" -c:v hevcenc_vpe -preset superfast -b:v 2000000 -enc_params "low_delay=1:gop_size=1:intra_pic_rate=5:pic_rc=1:pic_rc_config=rc.cfg" -f rtp_mpegts rtp://10.10.3.88:9999
+```
+Change bitrate on-the-fly:
+```bash
+echo "bps:100000" > rc.cfg
+```
+Change resolution on-the-fly:
+```bash
+echo "res:640x480" > rc.cfg
+```
+Change fps on-the-fly:
+```bash
+echo "fps:25/1" > rc.cfg
+```
+Change bitrate/resolution/fps on-the-fly:
+```bash
+echo "bps:100000" > rc.cfg
+echo "res:640x480" >> rc.cfg
+echo "fps:25/1" >> rc.cfg
 ```
 
+Play the video with ffplay:
+```bash
+ffplay -probesize 32 -analyzeduration 0 -sync ext rtp://10.10.3.88:9999
+```
+
+## Encoding h264 hevc with low latency
+To enable low latency encoding, you need:
+* Select "superfast" preset;
+* Add "low_delay=1" in -enc_params;
+```bash
+ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 \
+-s 1280x720 -pix_fmt nv12 -i ~/work/stream/out1280x720p_nv12.yuv \
+-filter_complex 'vpe_pp' -c:v hevcenc_vpe -preset superfast \
+-enc_params "low_delay=1" -b:v 10000000 out0.h264
+
+Stream mapping:
+  Stream #0:0 (rawvideo) -> vpe_pp
+  vpe_pp -> Stream #0:0 (hevcenc_vpe)
+Press [q] to stop, [?] for help
+Output #0, h264, to 'out0.h264':
+  Metadata:
+    encoder         : Lavf58.64.100
+    Stream #0:0: Video: hevc (hevcenc_vpe), vpe(progressive), 1280x720, q=2-31, 10000 kb/s, 25 fps, 25 tbn, 25 tbc
+    Metadata:
+      encoder         : Lavc58.112.101 hevcenc_vpe
+frame=  102 fps= 37 q=-0.0 latency=  5ms Lsize=    2643kB time=00:00:03.76 bitrate=5759.1kbits/s speed=1.35x
+
+```
+You can get **"latency=  xms"** in the FFmpeg log, the x means the overall latency of the VPE encoding.
 # 5.Use VPE in K8S
 
 If you's are running VPE on Seirios platform, please follow below link to know how to let it working under k8s:
