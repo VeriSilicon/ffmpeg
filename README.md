@@ -18,12 +18,11 @@
     * [Transcoding with parameters](#Transcoding-with-parameters)
     * [Downscaling First Pass](#Downscaling-First-Pass)
 * [4.Online Typical Use Case](#5.Online-Typical-Use-Case)
-    * [Capture Camera and start RTP streaming](#Capture-Camera-and-start-RTP-streaming)
+    * [Encoding h264 hevc with low latency](#Encoding-h264-hevc-with-low-latency)
+    * [Camera low latency streaming with dynamic bitrate fps resolution change](#Camera-low-latency-streaming-with-dynamic-bitrate-fps-resolution-change)
     * [RTMP Transcoding](#RTMP-Transcoding)
     * [4K source multiple outputs streaming](#4K-source-multiple-outputs-streaming)
-    * [Encoding HDR10 stream](#Encoding-HDR10-stream)
-    * [Encoding h264 hevc with dynamic bitrate fps resolution change](#Encoding-h264-hevc-with-dynamic-bitrate-fps-resolution-change)
-    * [Encoding h264 hevc with low latency](#Encoding-h264-hevc-with-low-latency)
+    * [HDR10 Encoding](#HDR10-Encoding)
 * [5.Use VPE in K8s](#4.Use-VPE-in-K8S)
 
 # 1.Introducing
@@ -421,16 +420,58 @@ The downscaled video will be used as the input of encoder to do second pass enco
 | 54 | h264 | hevc | 1 | Y| ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -c:v hevc_vpe -transcode 1 -low_res "1:(d2)" -i ${INPUT_FILE_HEVC} -c:v h264enc_vpe-preset medium -b:v 10000000 out0.h264 |
 
 # 4.Online Typical Use Case
-## Capture Camera and start RTP streaming
-###### Streaming:
+## Encoding h264 hevc with low latency
+To enable low latency encoding, you need:
+* Select "superfast" preset;
+* Add "low_delay=1" in -enc_params;
 ```bash
-sudo ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0 -i /dev/video0 -filter_complex "hwupload"
--c:v h264enc_vpe -preset fast -b:v 500000
--enc_params "intra_pic_rate=15" -f rtp_mpegts rtp://10.10.3.88:9999
+ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 \
+-s 1280x720 -pix_fmt nv12 -i ~/work/stream/out1280x720p_nv12.yuv \
+-filter_complex 'vpe_pp' -c:v hevcenc_vpe -preset superfast \
+-enc_params "low_delay=1" -b:v 10000000 out0.h264
+
+Stream mapping:
+  Stream #0:0 (rawvideo) -> vpe_pp
+  vpe_pp -> Stream #0:0 (hevcenc_vpe)
+Press [q] to stop, [?] for help
+Output #0, h264, to 'out0.h264':
+  Metadata:
+    encoder         : Lavf58.64.100
+    Stream #0:0: Video: hevc (hevcenc_vpe), vpe(progressive), 1280x720, q=2-31, 10000 kb/s, 25 fps, 25 tbn, 25 tbc
+    Metadata:
+      encoder         : Lavc58.112.101 hevcenc_vpe
+frame=  102 fps= 37 q=-0.0 latency=  5ms Lsize=    2643kB time=00:00:03.76 bitrate=5759.1kbits/s speed=1.35x
+
 ```
-###### Play
+You can get **"latency=  xms"** in the FFmpeg log, the x means the overall latency of the VPE encoding.
+
+## Camera low latency streaming with dynamic bitrate fps resolution change
+- Add **"pic_rc=1:pic_rc_config=rc.cfg"** into -enc_params to enable dynamic bitrate/fps change, then user can put target bitrate/fps in rc.cfg;
+- Enable **"vpe_pp"** to enable dynamic resolution change function, then user can put target resolution in rc.cfg;
+- Add **"low_delay=1"** into -enc_params, and select **"superfast"** preset to enable low latency mode;
 ```bash
-ffplay rtp://10.10.3.88:9999
+sudo ./ffmpeg -y -report -init_hw_device vpe=dev0:/dev/transcoder0 -vsync 0 -i /dev/video0 \
+-filter_complex "format=nv12,vpe_pp" -c:v hevcenc_vpe -preset superfast -b:v 2000000 \
+-enc_params "low_delay=1:intra_pic_rate=5:pic_rc=1:pic_rc_config=rc.cfg" \
+-f rtp_mpegts rtp://10.10.3.88:9999
+```
+Change bitrate on-the-fly:
+```bash
+echo "bps:100000" > rc.cfg
+```
+Change resolution on-the-fly:
+```bash
+echo "res:640x480" > rc.cfg
+```
+Change fps on-the-fly:
+```bash
+echo "fps:25/1" > rc.cfg
+```
+Change bitrate/resolution/fps on-the-fly:
+```bash
+echo "bps:100000" > rc.cfg
+echo "res:640x480" >> rc.cfg
+echo "fps:25/1" >> rc.cfg
 ```
 ## RTMP Transcoding
 You need to setup RTMP streaming server first
@@ -466,7 +507,7 @@ ffplay rtmp://10.10.3.88:1935/live/3M
 ffplay rtmp://10.10.3.88:1935/live/500k
 ```
 
-## Encoding HDR10 stream
+## HDR10 Encoding
 
 ```bash
 ffmpeg -y -report -init_hw_device vpe=dev0:/dev/transcoder0 \
@@ -476,59 +517,10 @@ ffmpeg -y -report -init_hw_device vpe=dev0:/dev/transcoder0 \
 -enc_params "mastering_display_en=1:display_pri_x0=13250:display_pri_y0=34500:display_pri_x1=7500:display_pri_y1=3000:display_pri_x2=34000:display_pri_y2=16000:white_point_x=15635:white_point_y=16450:min_luminance=0:max_luminance=10000000:light_level_en=1:max_content_light_level=1000:max_pic_average_light_level=640" 4khdr.hevc
 ```
 
-## Encoding h264 hevc with dynamic bitrate fps resolution change
-Need to add **"pic_rc=1:pic_rc_config=rc.cfg"** into -enc_params, then user can change file "rc.cfg" to put target bitrate:
-```bash
-sudo ./ffmpeg -y -report -init_hw_device vpe=dev0:/dev/transcoder0 -vsync 0 -i /dev/video0 -filter_complex "format=nv12,vpe_pp" -c:v hevcenc_vpe -preset superfast -b:v 2000000 -enc_params "low_delay=1:gop_size=1:intra_pic_rate=5:pic_rc=1:pic_rc_config=rc.cfg" -f rtp_mpegts rtp://10.10.3.88:9999
-```
-Change bitrate on-the-fly:
-```bash
-echo "bps:100000" > rc.cfg
-```
-Change resolution on-the-fly:
-```bash
-echo "res:640x480" > rc.cfg
-```
-Change fps on-the-fly:
-```bash
-echo "fps:25/1" > rc.cfg
-```
-Change bitrate/resolution/fps on-the-fly:
-```bash
-echo "bps:100000" > rc.cfg
-echo "res:640x480" >> rc.cfg
-echo "fps:25/1" >> rc.cfg
-```
-
 Play the video with ffplay:
 ```bash
 ffplay -probesize 32 -analyzeduration 0 -sync ext rtp://10.10.3.88:9999
 ```
-
-## Encoding h264 hevc with low latency
-To enable low latency encoding, you need:
-* Select "superfast" preset;
-* Add "low_delay=1" in -enc_params;
-```bash
-ffmpeg -y -init_hw_device vpe=dev0:/dev/transcoder0,priority=vod,vpeloglevel=0 \
--s 1280x720 -pix_fmt nv12 -i ~/work/stream/out1280x720p_nv12.yuv \
--filter_complex 'vpe_pp' -c:v hevcenc_vpe -preset superfast \
--enc_params "low_delay=1" -b:v 10000000 out0.h264
-
-Stream mapping:
-  Stream #0:0 (rawvideo) -> vpe_pp
-  vpe_pp -> Stream #0:0 (hevcenc_vpe)
-Press [q] to stop, [?] for help
-Output #0, h264, to 'out0.h264':
-  Metadata:
-    encoder         : Lavf58.64.100
-    Stream #0:0: Video: hevc (hevcenc_vpe), vpe(progressive), 1280x720, q=2-31, 10000 kb/s, 25 fps, 25 tbn, 25 tbc
-    Metadata:
-      encoder         : Lavc58.112.101 hevcenc_vpe
-frame=  102 fps= 37 q=-0.0 latency=  5ms Lsize=    2643kB time=00:00:03.76 bitrate=5759.1kbits/s speed=1.35x
-
-```
-You can get **"latency=  xms"** in the FFmpeg log, the x means the overall latency of the VPE encoding.
 # 5.Use VPE in K8S
 
 If you's are running VPE on Seirios platform, please follow below link to know how to let it working under k8s:
