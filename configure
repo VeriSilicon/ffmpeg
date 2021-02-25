@@ -325,6 +325,7 @@ External library support:
   --enable-vulkan          enable Vulkan code [no]
   --disable-xlib           disable xlib [autodetect]
   --disable-zlib           disable zlib [autodetect]
+  --enable-vpe             enable vpe codec [no]
 
   The following libraries provide various hardware acceleration features:
   --disable-amf            disable AMF video encoding code [autodetect]
@@ -1694,6 +1695,7 @@ EXAMPLE_LIST="
     transcoding_example
     vaapi_encode_example
     vaapi_transcode_example
+    vpe_transcode_example
 "
 
 EXTERNAL_AUTODETECT_LIBRARY_LIST="
@@ -1827,6 +1829,7 @@ EXTERNAL_LIBRARY_LIST="
     opengl
     pocketsphinx
     vapoursynth
+    vpe
 "
 
 HWACCEL_AUTODETECT_LIBRARY_LIST="
@@ -3087,6 +3090,8 @@ h264_vaapi_encoder_select="cbs_h264 vaapi_encode"
 h264_v4l2m2m_decoder_deps="v4l2_m2m h264_v4l2_m2m"
 h264_v4l2m2m_decoder_select="h264_mp4toannexb_bsf"
 h264_v4l2m2m_encoder_deps="v4l2_m2m h264_v4l2_m2m"
+h264_vpe_decoder_deps="vpe"
+h264_vpe_encoder_deps="vpe"
 hevc_amf_encoder_deps="amf"
 hevc_cuvid_decoder_deps="cuvid"
 hevc_cuvid_decoder_select="hevc_mp4toannexb_bsf"
@@ -3104,6 +3109,8 @@ hevc_vaapi_encoder_select="cbs_h265 vaapi_encode"
 hevc_v4l2m2m_decoder_deps="v4l2_m2m hevc_v4l2_m2m"
 hevc_v4l2m2m_decoder_select="hevc_mp4toannexb_bsf"
 hevc_v4l2m2m_encoder_deps="v4l2_m2m hevc_v4l2_m2m"
+hevc_vpe_decoder_deps="vpe"
+hevc_vpe_encoder_deps="vpe"
 mjpeg_cuvid_decoder_deps="cuvid"
 mjpeg_qsv_decoder_select="qsvdec"
 mjpeg_qsv_encoder_deps="libmfx"
@@ -3153,6 +3160,8 @@ vp9_vaapi_encoder_select="vaapi_encode"
 vp9_qsv_encoder_deps="libmfx MFX_CODEC_VP9"
 vp9_qsv_encoder_select="qsvenc"
 vp9_v4l2m2m_decoder_deps="v4l2_m2m vp9_v4l2_m2m"
+vp9_vpe_decoder_deps="vpe"
+vp9_vpe_encoder_deps="vpe"
 wmv3_crystalhd_decoder_select="crystalhd"
 av1_qsv_decoder_select="qsvdec"
 
@@ -3666,6 +3675,8 @@ vpp_qsv_filter_select="qsvvpp"
 xfade_opencl_filter_deps="opencl"
 yadif_cuda_filter_deps="ffnvcodec"
 yadif_cuda_filter_deps_any="cuda_nvcc cuda_llvm"
+spliter_vpe_filter_deps="vpe"
+pp_vpe_filter_deps="vpe"
 
 # examples
 avio_list_dir_deps="avformat avutil"
@@ -3691,6 +3702,7 @@ transcode_aac_example_deps="avcodec avformat swresample"
 transcoding_example_deps="avfilter avcodec avformat avutil"
 vaapi_encode_example_deps="avcodec avutil h264_vaapi_encoder"
 vaapi_transcode_example_deps="avcodec avformat avutil h264_vaapi_encoder"
+vpe_transcode_example_deps="avcodec avformat avutil avfilter h264_vpe_decoder h264_vpe_encoder hevc_vpe_decoder hevc_vpe_encoder vp9_vpe_decoder vp9_vpe_encoder"
 
 # EXTRALIBS_LIST
 cpu_init_extralibs="pthreads_extralibs"
@@ -6528,6 +6540,7 @@ enabled rkmpp             && { require_pkg_config rkmpp rockchip_mpp  rockchip/r
                                  die "ERROR: rkmpp requires --enable-libdrm"; }
                              }
 enabled vapoursynth       && require_pkg_config vapoursynth "vapoursynth-script >= 42" VSScript.h vsscript_init
+enabled vpe               && require_pkg_config libvpi libvpi "vpe/vpi_types.h vpe/vpi_api.h" vpi_create
 
 
 if enabled gcrypt; then

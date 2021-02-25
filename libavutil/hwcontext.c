@@ -62,6 +62,9 @@ static const HWContextType * const hw_table[] = {
 #if CONFIG_VULKAN
     &ff_hwcontext_type_vulkan,
 #endif
+#if CONFIG_VPE
+    &ff_hwcontext_type_vpe,
+#endif
     NULL,
 };
 
@@ -77,6 +80,7 @@ static const char *const hw_type_names[] = {
     [AV_HWDEVICE_TYPE_VIDEOTOOLBOX] = "videotoolbox",
     [AV_HWDEVICE_TYPE_MEDIACODEC] = "mediacodec",
     [AV_HWDEVICE_TYPE_VULKAN] = "vulkan",
+    [AV_HWDEVICE_TYPE_VPE] = "vpe",
 };
 
 enum AVHWDeviceType av_hwdevice_find_type_by_name(const char *name)
