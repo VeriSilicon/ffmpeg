@@ -780,6 +780,7 @@ extern AVCodec ff_vp8_vaapi_encoder;
 extern AVCodec ff_vp9_cuvid_decoder;
 extern AVCodec ff_vp9_mediacodec_decoder;
 extern AVCodec ff_vp9_vaapi_encoder;
+extern AVCodec ff_h264_vpe_decoder;
 extern AVCodec ff_hevc_vpe_decoder;
 extern AVCodec ff_vp9_vpe_decoder;
 extern AVCodec ff_h264_vpe_encoder;

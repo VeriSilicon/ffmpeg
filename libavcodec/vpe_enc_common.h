@@ -23,11 +23,12 @@
 #define AVCODEC_VPE_ENC_COMMON_H
 
 #include <stdint.h>
-
 #include <vpe/vpi_api.h>
 #include <vpe/vpi_types.h>
-
-#include "encode.h"
+#include "libavutil/frame.h"
+#include "libavutil/buffer.h"
+#include "libavutil/log.h"
+#include "libavcodec/avcodec.h"
 
 typedef struct VpeEncFrm {
     /*The state of used or not*/
@@ -60,7 +61,6 @@ typedef struct VpeEncCtx {
     /*VPE encoder public parameters with -enc_params*/
     VpiEncParamSet *param_list;
 
-    AVFrame *frame;
     int eof;
 
     /*Encoding preset, superfast/fast/medium/slow/superslow*/
@@ -88,6 +88,8 @@ typedef struct VpeEncCtx {
 
 int ff_vpe_encode_init(AVCodecContext *avctx, VpiPlugin type);
 av_cold int ff_vpe_encode_close(AVCodecContext *avctx);
+av_cold int ff_enc_receive_pic(AVCodecContext *avctx,
+                   const AVFrame *input_frame);
 int ff_vpe_encode_receive_packet(AVCodecContext *avctx, AVPacket *avpkt);
 
 #endif /*AVCODEC_VPE_ENC_COMMON_H*/

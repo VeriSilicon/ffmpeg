@@ -20,7 +20,7 @@
  */
 
 #include "internal.h"
-#include "hwconfig.h"
+#include "hwaccel.h"
 #include "libavutil/opt.h"
 #include "vpe_enc_common.h"
 
@@ -184,6 +184,7 @@ AVCodec ff_vp9_vpe_encoder = {
     .id             = AV_CODEC_ID_VP9,
     .priv_data_size = sizeof(VpeEncCtx),
     .init           = &vpe_vp9_encode_init,
+    .send_frame     = &ff_enc_receive_pic,
     .receive_packet = &ff_vpe_encode_receive_packet,
     .close          = &ff_vpe_encode_close,
     .priv_class     = &vpe_enc_vp9_class,

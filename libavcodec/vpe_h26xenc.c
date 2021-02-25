@@ -20,7 +20,7 @@
  */
 
 #include "internal.h"
-#include "hwconfig.h"
+#include "hwaccel.h"
 #include "libavutil/opt.h"
 #include "vpe_enc_common.h"
 
@@ -213,6 +213,7 @@ AVCodec ff_h264_vpe_encoder = {
     .priv_data_size = sizeof(VpeEncCtx),
     .init           = &vpe_h26x_encode_init,
     .close          = &ff_vpe_encode_close,
+    .send_frame     = &ff_enc_receive_pic,
     .receive_packet = &ff_vpe_encode_receive_packet,
     .priv_class     = &vpe_encode_h264_class,
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE,
@@ -232,6 +233,7 @@ AVCodec ff_hevc_vpe_encoder = {
     .priv_data_size = sizeof(VpeEncCtx),
     .init           = &vpe_h26x_encode_init,
     .close          = &ff_vpe_encode_close,
+    .send_frame     = &ff_enc_receive_pic,
     .receive_packet = &ff_vpe_encode_receive_packet,
     .priv_class     = &vpe_encode_hevc_class,
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE,

@@ -118,9 +118,6 @@ int ff_vpe_encode_init(AVCodecContext *avctx, VpiPlugin type)
         return ret;
     }
 
-    enc_ctx->frame = av_frame_alloc();
-    if (!enc_ctx->frame)
-        return AVERROR(ENOMEM);
     enc_ctx->vpi_frame = vpeframe_ctx->frame;
 
     return 0;
@@ -237,14 +234,14 @@ static av_cold int vpe_enc_free_frames(AVCodecContext *avctx)
 /**
  * Fetch new AVFrame and put to external encoder
  */
-static int vpe_enc_receive_pic(AVCodecContext *avctx)
+av_cold int ff_enc_receive_pic(AVCodecContext *avctx,
+                   const AVFrame *input_frame)
 {
     int i               = 0;
     int ret             = 0;
     VpeEncFrm *transpic = NULL;
     VpeEncCtx *enc_ctx  = (VpeEncCtx *)avctx->priv_data;
     VpiFrame *vpi_frame = NULL;
-    AVFrame *frame      = enc_ctx->frame;
     VpiCtrlCmdParam cmd;
 
     do {
@@ -265,17 +262,6 @@ static int vpe_enc_receive_pic(AVCodecContext *avctx)
         }
     } while (1);
 
-    if (!frame->buf[0]) {
-        ret = ff_encode_get_frame(avctx, frame);
-        if (ret < 0 && ret != AVERROR_EOF)
-            return ret;
-        if (ret == AVERROR_EOF)
-            frame = NULL;
-    } else {
-        av_log(enc_ctx, AV_LOG_ERROR, "frame has not been put to VPE encoder\n");
-        return AVERROR_INVALIDDATA;
-    }
-
     transpic->state = 1;
 
     cmd.cmd  = VPI_CMD_ENC_GET_EMPTY_FRAME_SLOT;
@@ -284,14 +270,14 @@ static int vpe_enc_receive_pic(AVCodecContext *avctx)
                     (void*)&cmd, (void *)&vpi_frame);
     if (ret || !vpi_frame)
         return AVERROR_EXTERNAL;
-    if (frame) {
+    if (input_frame) {
         if (!transpic->frame) {
             transpic->frame = av_frame_alloc();
             if (!transpic->frame)
                 return AVERROR(ENOMEM);
         }
         av_frame_unref(transpic->frame);
-        av_frame_move_ref(transpic->frame, frame);
+        av_frame_ref(transpic->frame, input_frame);
         vpe_enc_input_frame(transpic->frame, vpi_frame);
     } else {
         av_log(enc_ctx, AV_LOG_DEBUG, "input image is empty, received EOF\n");
@@ -333,12 +319,6 @@ int ff_vpe_encode_receive_packet(AVCodecContext *avctx, AVPacket *avpkt)
     ret = vpe_enc_free_frames(avctx);
     if (ret)
         return ret;
-
-    if (enc_ctx->eof == 0) {
-        ret = vpe_enc_receive_pic(avctx);
-        if (ret)
-            return ret;
-    }
 
     cmd.cmd = VPI_CMD_ENC_GET_FRAME_PACKET;
     ret = enc_ctx->vpi->control(enc_ctx->ctx, &cmd, (void *)&stream_size);
@@ -410,7 +390,6 @@ av_cold int ff_vpe_encode_close(AVCodecContext *avctx)
     if (enc_ctx->ctx)
         enc_ctx->vpi->close(enc_ctx->ctx);
     vpe_enc_consume_flush(avctx);
-    av_frame_free(&enc_ctx->frame);
     av_buffer_unref(&enc_ctx->hwframe);
     if (enc_ctx->enc_cfg)
         free(enc_ctx->enc_cfg);

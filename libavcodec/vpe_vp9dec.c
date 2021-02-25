@@ -19,7 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "hwconfig.h"
+#include "hwaccel.h"
 #include "internal.h"
 
 #include "vpe_dec_common.h"
